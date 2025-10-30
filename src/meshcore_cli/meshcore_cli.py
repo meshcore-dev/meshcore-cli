@@ -33,7 +33,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.1.41"
+VERSION = "v1.2.0"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -307,11 +307,22 @@ async def subscribe_to_msgs(mc, json_output=False, above=False):
     await mc.start_auto_message_fetching()
 
 # redefine get_completion to let user put symbols in first item
+# and handle navigating in path ...
 class MyNestedCompleter(NestedCompleter):
     def get_completions( self, document, complete_event):
-        if not " " in document.text_before_cursor.lstrip(): 
+        txt = document.text_before_cursor.lstrip()
+        if not " " in txt: 
+            if txt != "" and txt[0] == "/" and txt.count("/") == 1:
+                opts = []
+                for k in self.options.keys():
+                    if k[0] == "/" :
+                        v = "/" + k.split("/")[1] + ("/" if k.count("/") == 2 else "")
+                        if v not in opts:
+                            opts.append(v)
+            else:
+                opts = self.options.keys()
             completer = WordCompleter(
-                list(self.options.keys()), ignore_case=self.ignore_case,
+                opts, ignore_case=self.ignore_case,
                 pattern=re.compile(r"([a-zA-Z0-9_\\/]+|[^a-zA-Z0-9_\s]+)"))
             yield from completer.get_completions(document, complete_event)
         else: # normal behavior for remainder
@@ -566,15 +577,35 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
         completion_list.update({
             "send" : None,
         })
-
         if to['type'] == 1 :
             completion_list.update(client_completion_list)
-
-        if to['type'] > 1 : # repeaters and room servers
+        if to['type'] == 2 or to['type'] == 3 : # repeaters and room servers
             completion_list.update(repeater_completion_list)
-
         if (to['type'] == 4) : #specific to sensors
             completion_list.update(sensor_completion_list)
+
+    slash_root_completion_list = {}
+    for k,v in root_completion_list.items():
+        slash_root_completion_list["/"+k]=v
+    
+    completion_list.update(slash_root_completion_list)
+
+    slash_contacts_completion_list = {}
+    for k,v in contacts.items():
+        d={}
+        if v["type"] == 1:
+            l = client_completion_list
+        elif v["type"] == 2 or v["type"] == 3:
+            l = repeater_completion_list
+        elif v["type"] == 4:
+            l = sensor_completion_list
+
+        for kk, vv in l.items():
+            d["/" + v["adv_name"] + "/" + kk] = vv
+
+        slash_contacts_completion_list.update(d)
+
+    completion_list.update(slash_contacts_completion_list)
 
     completion_list.update({
         "script" : None,
@@ -700,6 +731,10 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                 pass
 
             # raw meshcli command as on command line
+            elif line.startswith("$") :
+                args = shlex.split(line[1:])
+                await process_cmds(mc, args)
+
             elif line.startswith("/") :
                 path = line.split(" ", 1)[0]
                 if path.count("/") == 1:
@@ -713,11 +748,10 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                         print(f"{contact_name} is not a contact")
                     else:
                         if not await process_contact_chat_line(mc, tct, cmdline):
-                            print(f"{cmdline} not found for {contact_name}")
-
-            elif line.startswith("$") :
-                args = shlex.split(line[1:])
-                await process_cmds(mc, args)
+                            if tct["type"] == 1:
+                                last_ack = await msg_ack(mc, tct, cmdline)
+                            else :
+                                await process_cmds(mc, ["cmd", tct["adv_name"], cmdline])
 
             elif line.startswith("to ") : # dest
                 dest = line[3:]
