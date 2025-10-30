@@ -9,6 +9,7 @@ import getopt, json, shlex, re
 import logging
 import requests
 from bleak import BleakScanner, BleakClient
+from bleak.exc import BleakError
 import serial.tools.list_ports
 from pathlib import Path
 import traceback
@@ -23,7 +24,7 @@ from prompt_toolkit.shortcuts import radiolist_dialog
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.1.40"
+VERSION = "v1.1.41"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -2600,23 +2601,30 @@ async def main(argv):
                 return
             case "-l" :
                 print("BLE devices:")
-                devices = await BleakScanner.discover(timeout=timeout)
-                if len(devices) == 0:
-                    print(" No ble device found")
-                for d in devices :
-                    if not d.name is None and d.name.startswith("MeshCore-"):
-                        print(f" {d.address}  {d.name}")
+                try :
+                    devices = await BleakScanner.discover(timeout=timeout)
+                    if len(devices) == 0:
+                        print(" No ble device found")
+                    for d in devices :
+                        if not d.name is None and d.name.startswith("MeshCore-"):
+                            print(f" {d.address}  {d.name}")
+                except BleakError:
+                    print(" No BLE HW") 
                 print("\nSerial ports:")
                 ports = serial.tools.list_ports.comports()
                 for port, desc, hwid in sorted(ports):
                     print(f" {port:<18} {desc} [{hwid}]")
                 return
             case "-S" :
-                devices = await BleakScanner.discover(timeout=timeout)
                 choices = []
-                for d in devices:
-                    if not d.name is None and d.name.startswith("MeshCore-"):
-                        choices.append(({"type":"ble","device":d}, f"{d.address:<22} {d.name}"))
+
+                try :
+                    devices = await BleakScanner.discover(timeout=timeout)
+                    for d in devices:
+                        if not d.name is None and d.name.startswith("MeshCore-"):
+                            choices.append(({"type":"ble","device":d}, f"{d.address:<22} {d.name}"))
+                except BleakError:
+                    logger.info("No BLE Device")
 
                 ports = serial.tools.list_ports.comports()
                 for port, desc, hwid in sorted(ports):
