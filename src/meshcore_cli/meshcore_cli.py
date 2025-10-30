@@ -2,6 +2,7 @@
 """
     mccli.py : CLI interface to MeschCore BLE companion app
 """
+
 import asyncio
 import os, sys
 import time, datetime
@@ -16,10 +17,18 @@ import traceback
 from prompt_toolkit.shortcuts import PromptSession
 from prompt_toolkit.shortcuts import CompleteStyle
 from prompt_toolkit.completion import NestedCompleter
+from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.shortcuts import radiolist_dialog
+
+#from typing import Iterable, Mapping, Set, Union
+
+from prompt_toolkit.completion.word_completer import WordCompleter
+from prompt_toolkit.document import Document
+
+import re
 
 from meshcore import MeshCore, EventType, logger
 
@@ -296,6 +305,17 @@ async def subscribe_to_msgs(mc, json_output=False, above=False):
     if CS is None :
         CS = mc.subscribe(EventType.CHANNEL_MSG_RECV, handle_message)
     await mc.start_auto_message_fetching()
+
+# redefine get_completion to let user put symbols in first item
+class MyNestedCompleter(NestedCompleter):
+    def get_completions( self, document, complete_event):
+        if not " " in document.text_before_cursor.lstrip(): 
+            completer = WordCompleter(
+                list(self.options.keys()), ignore_case=self.ignore_case,
+                pattern=re.compile(r"([a-zA-Z0-9_\\/]+|[^a-zA-Z0-9_\s]+)"))
+            yield from completer.get_completions(document, complete_event)
+        else: # normal behavior for remainder
+            yield from super().get_completions(document, complete_event)
 
 def make_completion_dict(contacts, pending={}, to=None, channels=None):
     contact_list = {}
@@ -666,7 +686,7 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
             session.app.ttimeoutlen = 0.2
             session.app.timeoutlen = 0.2
 
-            completer = NestedCompleter.from_nested_dict(
+            completer = MyNestedCompleter.from_nested_dict(
                             make_completion_dict(mc.contacts,
                                     mc.pending_contacts,
                                     to=contact,
