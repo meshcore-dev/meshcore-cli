@@ -681,7 +681,7 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                 pass
 
             # raw meshcli command as on command line
-            elif line.startswith("$") :
+            elif line.startswith("$") or line.startswith("/") :
                 args = shlex.split(line[1:])
                 await process_cmds(mc, args)
 
