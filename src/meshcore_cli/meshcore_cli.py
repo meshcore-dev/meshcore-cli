@@ -317,6 +317,7 @@ class MyNestedCompleter(NestedCompleter):
         else: # normal behavior for remainder
             yield from super().get_completions(document, complete_event)
 
+
 def make_completion_dict(contacts, pending={}, to=None, channels=None):
     contact_list = {}
     pending_list = {}
@@ -353,8 +354,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
         "chan" : None,
     }
 
-    if to is None :
-        completion_list.update({
+    root_completion_list = {
             "ver" : None,
             "infos" : None,
             "advert" : None,
@@ -452,16 +452,9 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
                      "flood_after":None,
                      "custom":None,
                      },
-        })
-        completion_list["set"].update(make_completion_dict.custom_vars)
-        completion_list["get"].update(make_completion_dict.custom_vars)
-    else :
-        completion_list.update({
-            "send" : None,
-        })
+        }
 
-        if to['type'] > 0: # contact
-            completion_list.update({
+    contact_completion_list = {
                 "contact_info": None,
                 "export_contact" : None,
                 "share_contact" : None,
@@ -475,20 +468,16 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
                 "change_flags" : None,
                 "req_telemetry" : None,
                 "req_binary" : None,
-            })
+        }
 
-        if to['type'] == 1 :
-            completion_list.update({
-                "get" : {
-                    "timeout":None,
-                },
-                "set" : {
-                    "timeout":None,
-                },
-            })
+    client_completion_list = dict(contact_completion_list)
+    client_completion_list.update({
+                "get" : { "timeout":None, },
+                "set" : { "timeout":None, },
+    })
 
-        if to['type'] > 1 : # repeaters and room servers
-            completion_list.update({
+    repeater_completion_list = dict(contact_completion_list)
+    repeater_completion_list.update({
                 "login" : None,
                 "logout" : None,
                 "req_status" : None,
@@ -563,19 +552,29 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
                          },
                 "erase": None,
                 "log" : {"start" : None, "stop" : None, "erase" : None}
-            })
+    })
+
+    sensor_completion_list = dict(repeater_completion_list)
+    sensor_completion_list.update({"req_mma":{"begin end":None}})
+    sensor_completion_list["get"].update({ "mma":None, })
+
+    if to is None :
+        completion_list.update(dict(root_completion_list))
+        completion_list["set"].update(make_completion_dict.custom_vars)
+        completion_list["get"].update(make_completion_dict.custom_vars)
+    else :
+        completion_list.update({
+            "send" : None,
+        })
+
+        if to['type'] == 1 :
+            completion_list.update(client_completion_list)
+
+        if to['type'] > 1 : # repeaters and room servers
+            completion_list.update(repeater_completion_list)
 
         if (to['type'] == 4) : #specific to sensors
-            completion_list.update({
-                "req_mma":{"begin end":None},
-            })
-
-            completion_list["get"].update({
-                "mma":None,
-            })
-
-            completion_list["set"].update({
-            })
+            completion_list.update(sensor_completion_list)
 
     completion_list.update({
         "script" : None,
