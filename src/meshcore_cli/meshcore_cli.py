@@ -23,7 +23,7 @@ from prompt_toolkit.shortcuts import radiolist_dialog
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.1.39"
+VERSION = "v1.1.40"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -398,6 +398,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
                     "telemetry_mode_env" : {"always" : None, "device":None, "never":None},
                     "advert_loc_policy" : {"none" : None, "share" : None},
                     "auto_update_contacts" : {"on":None, "off":None},
+                    "multi_acks" : {"on": None, "off":None},
                     "max_attempts" : None,
                     "max_flood_attempts" : None,
                     "flood_after" : None,
@@ -424,6 +425,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
                      "telemetry_mode_env":None,
                      "advert_loc_policy":None,
                      "auto_update_contacts":None,
+                     "multi_acks":None,
                      "max_attempts":None,
                      "max_flood_attempts":None,
                      "flood_after":None,
@@ -1389,6 +1391,13 @@ async def next_cmd(mc, cmds, json_output=False):
                             print(f"Error : {res}")
                         else :
                             print(f"manual add contact: {mac}")
+                    case "multi_acks":
+                        ma = (cmds[2] == "on") or (cmds[2] == "true") or (cmds[2] == "yes") or (cmds[2] == "1")
+                        res = await mc.commands.set_multi_acks(ma)
+                        if res.type == EventType.ERROR:
+                            print(f"Error : {res}")
+                        else :
+                            print(f"multi_acks: {ma}")
                     case "auto_update_contacts":
                         auc = (cmds[2] == "on") or (cmds[2] == "true") or (cmds[2] == "yes") or (cmds[2] == "1")
                         mc.auto_update_contacts=auc
@@ -1579,6 +1588,12 @@ async def next_cmd(mc, cmds, json_output=False):
                             print(json.dumps(res.payload, indent=4))
                         else:
                             print(f"Using {res.payload['used_kb']}kB of {res.payload['total_kb']}kB")
+                    case "multi_acks" :
+                        await mc.commands.send_appstart()
+                        if json_output :
+                            print(json.dumps({"multi_acks" : mc.self_info["multi_acks"]}))
+                        else :
+                            print(f"multi_acks: {mc.self_info['multi_acks']}")
                     case "manual_add_contacts" :
                         await mc.commands.send_appstart()
                         if json_output :
