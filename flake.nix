@@ -4,11 +4,9 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
-  outputs =
-    inputs:
+  outputs = inputs:
     inputs.flake-utils.lib.eachDefaultSystem (
-      system:
-      let
+      system: let
         pkgs = inputs.nixpkgs.legacyPackages.${system};
 
         lib = pkgs.lib;
@@ -17,15 +15,15 @@
 
         meshcore = python3Packages.buildPythonPackage rec {
           pname = "meshcore";
-          version = "2.1.9";
+          version = "2.1.18";
           pyproject = true;
 
           src = python3Packages.fetchPypi {
             inherit pname version;
-            sha256 = "sha256-FhTOuVHhpYvmITgxfhXys8AJhRfYnMwCJ3fWJhMf53w=";
+            sha256 = "sha256-hLflGBHG1z0b31oLh5KgXQbrYeBgYtY07fjgULw68tA=";
           };
 
-          build-system = [ python3Packages.hatchling ];
+          build-system = [python3Packages.hatchling];
 
           dependencies = [
             python3Packages.bleak
@@ -33,13 +31,12 @@
             python3Packages.pyserial-asyncio
           ];
 
-          pythonImportsCheck = [ "meshcore" ];
+          pythonImportsCheck = ["meshcore"];
         };
 
         pyproject = lib.importTOML ./pyproject.toml;
         version = pyproject.project.version;
-      in
-      {
+      in {
         packages.meshcore-cli = python3Packages.buildPythonPackage {
           pname = "meshcore-cli";
           inherit version;
