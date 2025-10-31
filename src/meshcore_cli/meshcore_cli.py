@@ -339,7 +339,6 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
     if not process_event_message.last_node is None:
         to_list["!"] = None
     to_list[".."] = None
-    to_list["public"] = None
 
     it = iter(contacts.items())
     for c in it :
