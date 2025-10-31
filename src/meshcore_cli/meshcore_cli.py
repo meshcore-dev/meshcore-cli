@@ -22,9 +22,6 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.shortcuts import radiolist_dialog
-
-#from typing import Iterable, Mapping, Set, Union
-
 from prompt_toolkit.completion.word_completer import WordCompleter
 from prompt_toolkit.document import Document
 
@@ -316,7 +313,7 @@ class MyNestedCompleter(NestedCompleter):
                 opts = []
                 for k in self.options.keys():
                     if k[0] == "/" :
-                        v = "/" + k.split("/")[1] + ("/" if k.count("/") == 2 else "")
+                        v = "/" + k.split("/")[1] #+ ("/" if k.count("/") == 2 else "")
                         if v not in opts:
                             opts.append(v)
             else:
@@ -478,6 +475,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
                 "change_flags" : None,
                 "req_telemetry" : None,
                 "req_binary" : None,
+                "forget_password" : None,
         }
 
     client_completion_list = dict(contact_completion_list)
@@ -623,7 +621,6 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
     contact = to
     prev_contact = None
 
-#    await get_contacts(mc, anim=True)
     await get_contacts(mc, anim=True)
     await get_channels(mc, anim=True)
     await subscribe_to_msgs(mc, above=True)
@@ -889,6 +886,14 @@ async def process_contact_chat_line(mc, contact, line):
         await process_cmds(mc, args)
         return True
 
+    # special case for rp that can be chained from cmdline
+    if line.startswith("rp ") or line.startswith("reset_path ") :
+        args = ["rp", contact['adv_name']]
+        await process_cmds(mc, args)
+        secline = line.split(" ", 1)[1]
+        await process_contact_chat_line(mc, contact, secline)
+        return True
+
     if line.startswith("set timeout "):
         cmds=line.split(" ")
         contact["timeout"] = float(cmds[2])
@@ -959,6 +964,38 @@ async def process_contact_chat_line(mc, contact, line):
         cmds = line.split(" ", 1)
         args = [cmds[0], contact['adv_name'], cmds[1]]
         await process_cmds(mc, args)
+        return True
+
+    if line == "login": # use stored password or prompt for it
+        password_file = ""
+        password = ""
+        if os.path.isdir(MCCLI_CONFIG_DIR) :
+            password_file = MCCLI_CONFIG_DIR + contact['adv_name'] + ".pass"
+            if os.path.exists(password_file) :
+                with open(password_file, "r", encoding="utf-8") as f :
+                    password=f.readline().strip()
+
+        if password == "":
+            sess = PromptSession("Password: ", is_password=True)
+            password = await sess.prompt_async()
+
+            if password_file != "":
+                with open(password_file, "w", encoding="utf-8") as f :
+                    f.write(password)
+
+        args = ["login", contact['adv_name'], password]
+        await process_cmds(mc, args)
+        return True
+
+    if line.startswith("forget_password") or line.startswith("fp"):
+        password_file = MCCLI_CONFIG_DIR + contact['adv_name'] + ".pass"
+        if os.path.exists(password_file):
+            os.remove(password_file)
+        try:
+            secline = line.split(" ", 1)[1]
+            await process_contact_chat_line(mc, contact, secline)
+        except IndexError:
+            pass
         return True
 
     if contact["type"] == 4 and \
@@ -1089,6 +1126,9 @@ async def get_channel_by_name (mc, name):
     return None
 
 async def get_contacts (mc, anim=False, lastomod=0, timeout=5) :
+    if mc._contacts:
+        return
+
     if anim:
         print("Fetching contacts ", end="", flush=True)
 
