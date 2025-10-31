@@ -976,8 +976,12 @@ async def process_contact_chat_line(mc, contact, line):
                     password=f.readline().strip()
 
         if password == "":
-            sess = PromptSession("Password: ", is_password=True)
-            password = await sess.prompt_async()
+            try:
+                sess = PromptSession("Password: ", is_password=True)
+                password = await sess.prompt_async()
+            except EOFError:
+                logger.info("Canceled")
+                return True
 
             if password_file != "":
                 with open(password_file, "w", encoding="utf-8") as f :
@@ -1990,7 +1994,12 @@ async def next_cmd(mc, cmds, json_output=False):
                     else:
                         print(f"Unknown contact {cmds[1]}")
                 else:
-                    res = await mc.commands.send_login(contact, cmds[2])
+                    password = cmds[2]
+                    if password == "$":
+                        sess = PromptSession("Password: ", is_password=True)
+                        password = await sess.prompt_async()
+
+                    res = await mc.commands.send_login(contact, password)
                     logger.debug(res)
                     if res.type == EventType.ERROR:
                         if json_output :
@@ -2571,6 +2580,9 @@ async def next_cmd(mc, cmds, json_output=False):
 
     except IndexError:
         logger.error("Error in parameters, returning")
+        return None
+    except EOFError:
+        logger.error("Cancelled")
         return None
 
 async def process_cmds (mc, args, json_output=False) :
