@@ -30,7 +30,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.2.0"
+VERSION = "v1.2.1"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -2843,7 +2843,7 @@ async def main(argv):
             mc = await MeshCore.create_ble(address=address, device=device, client=client, debug=debug, only_error=json_output, pin=pin)
         except ConnectionError :
             logger.info("Error while connecting, retrying once ...")
-            if device is None or client is None: # Search for device
+            if device is None and client is None: # Search for device
                 logger.info(f"Scanning BLE for device matching {address}")
                 devices = await BleakScanner.discover(timeout=timeout)
                 found = False
