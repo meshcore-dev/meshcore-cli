@@ -604,6 +604,14 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
 
     completion_list.update(slash_contacts_completion_list)
 
+    slash_chan_completion_list = {}
+    if not channels is None:
+        for c in channels :
+            if c["channel_name"] != "":
+                slash_chan_completion_list["/" + c["channel_name"]] = None
+
+    completion_list.update(slash_chan_completion_list)
+
     completion_list.update({
         "script" : None,
         "quit" : None
@@ -734,8 +742,19 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
             elif line.startswith("/") :
                 path = line.split(" ", 1)[0]
                 if path.count("/") == 1:
-                    args = shlex.split(line[1:])
-                    await process_cmds(mc, args)
+                    args = line[1:].split(" ")
+                    tct = mc.get_contact_by_name(args[0])
+                    if len(args)>1 and not tct is None: # a contact, send a message
+                        if tct["type"] == 1 or tct["type"] == 3: # client or room
+                            last_ack = await msg_ack(mc, tct, line.split(" ", 1)[1])
+                        else:
+                            print("Can only send msg to chan, client or room")
+                    else :
+                        ch = await get_channel_by_name(mc, args[0])
+                        if len(args)>1 and not ch is None: # a channel, send message
+                            await send_chan_msg(mc, ch["channel_idx"], line.split(" ", 1)[1])
+                        else :
+                            await process_cmds(mc, shlex.split(line[1:]))
                 else:
                     cmdline = line[1:].split("/",1)[1]
                     contact_name = path[1:].split("/",1)[0]
@@ -744,10 +763,11 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                         print(f"{contact_name} is not a contact")
                     else:
                         if not await process_contact_chat_line(mc, tct, cmdline):
-                            if tct["type"] == 1:
-                                last_ack = await msg_ack(mc, tct, cmdline)
-                            else :
-                                await process_cmds(mc, ["cmd", tct["adv_name"], cmdline])
+                            if cmdline != "":
+                                if tct["type"] == 1:
+                                    last_ack = await msg_ack(mc, tct, cmdline)
+                                else :
+                                    await process_cmds(mc, ["cmd", tct["adv_name"], cmdline])
 
             elif line.startswith("to ") : # dest
                 dest = line[3:]
@@ -805,7 +825,7 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                 if ln is None :
                     print("No received msg yet !")
                 elif ln["type"] == 0 :
-                    await process_cmds(mc, ["chan", str(contact["chan_nb"]), line]  )
+                    await send_chan_msg(mc, ln["chan_nb"], line[1:])
                 else :
                     last_ack = await msg_ack(mc, ln, line[1:])
                     if last_ack == False :
@@ -837,7 +857,7 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                 last_ack = await msg_ack(mc, contact, line)
 
             elif contact["type"] == 0 : # channel, send msg to channel
-                await process_cmds(mc, ["chan", str(contact["chan_nb"]), line]  )
+                await send_chan_msg(mc, contact["chan_nb"], line)
 
             elif contact["type"] == 1 : # chat, send to recipient and wait ack
                 last_ack = await msg_ack(mc, contact, line)
