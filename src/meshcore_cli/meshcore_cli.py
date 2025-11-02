@@ -228,7 +228,12 @@ async def handle_log_rx(event):
             width = os.get_terminal_size().columns
             cars = width - 13 - 2 * path_len - len(chan_name) - 1
             dispmsg = message[0:cars]
-            print_above(f"{ANSI_LIGHT_GRAY}{chan_name} {ANSI_DGREEN}{dispmsg+(cars-len(dispmsg))*" "} {ANSI_YELLOW}[{path}]{ANSI_LIGHT_GRAY}{event.payload['snr']:6,.2f}{event.payload['rssi']:4}{ANSI_END}")
+            txt = f"{ANSI_LIGHT_GRAY}{chan_name} {ANSI_DGREEN}{dispmsg+(cars-len(dispmsg))*" "} {ANSI_YELLOW}[{path}]{ANSI_LIGHT_GRAY}{event.payload['snr']:6,.2f}{event.payload['rssi']:4}{ANSI_END}"
+            if handle_message.above:
+                print_above(txt)
+            else:
+                print(txt)
+            return
             
 handle_log_rx.json_log_rx = False
 handle_log_rx.log_channels = False
@@ -1220,7 +1225,7 @@ async def get_channel_by_name (mc, name):
 
 async def get_channel_by_hash (mc, hash):
     if not hasattr(mc, 'channels') :
-        await_get_channels(mc)
+        await get_channels(mc)
 
     for c in mc.channels:
         if c['channel_hash'] == hash:
@@ -1305,7 +1310,8 @@ async def get_channels (mc, anim=False) :
         ch = ch + 1
         if anim:
             print(".", end="", flush=True)
-    print (" Done")
+    if anim:
+        print (" Done")
     return mc.channels
 
 async def print_trace_to (mc, contact):
@@ -2629,7 +2635,7 @@ async def next_cmd(mc, cmds, json_output=False):
                     if json_output:
                         await ps.prompt_async()
                     else:
-                        await ps.prompt_async("Press Enter to continue ...")
+                        await ps.prompt_async("Press Enter to continue ...\n")
                 except (EOFError, KeyboardInterrupt, asyncio.CancelledError):
                     pass
 
