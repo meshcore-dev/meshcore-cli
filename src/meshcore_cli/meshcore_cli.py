@@ -193,6 +193,19 @@ process_event_message.print_snr=False
 process_event_message.color=True
 process_event_message.last_node=None
 
+async def handle_log_rx(event):
+    if not handle_log_rx.print_log_rx:
+        return
+
+    if handle_message.json_output: # json mode ... raw dump
+        msg = json.dumps(event.payload)
+        if handle_message.above:
+            print_above(msg)
+        else :
+            print(msg)
+        return
+handle_log_rx.print_log_rx = False
+
 async def handle_advert(event):
     if not handle_advert.print_adverts:
         return
@@ -417,6 +430,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "color" : {"on":None, "off":None},
             "print_name" : {"on":None, "off":None},
             "print_adverts" : {"on":None, "off":None},
+            "print_log_rx" : {"on":None, "off":None},
             "print_new_contacts" : {"on": None, "off":None},
             "print_path_updates" : {"on":None,"off":None},
             "classic_prompt" : {"on" : None, "off":None},
@@ -444,6 +458,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "color":None,
             "print_name":None,
             "print_adverts":None,
+            "print_log_rx":None,
             "print_path_updates":None,
             "print_new_contacts":None,
             "classic_prompt":None,
@@ -1445,6 +1460,10 @@ async def next_cmd(mc, cmds, json_output=False):
                         process_event_message.print_snr = (cmds[2] == "on")
                         if json_output :
                             print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
+                    case "print_log_rx" :
+                        handle_log_rx.print_log_rx = (cmds[2] == "on")
+                        if json_output :
+                            print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
                     case "print_adverts" :
                         handle_advert.print_adverts = (cmds[2] == "on")
                         if json_output :
@@ -1675,6 +1694,11 @@ async def next_cmd(mc, cmds, json_output=False):
                             print(json.dumps({"color" : process_event_message.color}))
                         else:
                             print(f"{'on' if process_event_message.color else 'off'}")
+                    case "print_log_rx":
+                        if json_output :
+                            print(json.dumps({"print_log_rx" : handle_log_rx.print_log_rx}))
+                        else:
+                            print(f"{'on' if handle_log_rx.print_log_rx else 'off'}")
                     case "print_adverts":
                         if json_output :
                             print(json.dumps({"print_adverts" : handle_advert.print_adverts}))
@@ -2919,6 +2943,7 @@ async def main(argv):
     mc.subscribe(EventType.ADVERTISEMENT, handle_advert)
     mc.subscribe(EventType.PATH_UPDATE, handle_path_update)
     mc.subscribe(EventType.NEW_CONTACT, handle_new_contact)
+    mc.subscribe(EventType.RX_LOG_DATA, handle_log_rx)
 
     mc.auto_update_contacts = True
 
