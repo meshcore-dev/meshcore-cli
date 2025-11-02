@@ -224,7 +224,7 @@ async def handle_log_rx(event):
                 cipher = AES.new(aes_key, AES.MODE_ECB)
                 message = cipher.decrypt(msg)[5:].decode("utf-8").strip("\x00")
             
-            print_above(f"{ANSI_LIGHT_GRAY}{chan_name:>10} {ANSI_GREEN}{message[0:25]:25} {ANSI_LIGHT_GRAY}({event.payload['snr']:7,.2f},{event.payload['rssi']:4}){ANSI_YELLOW} [{path}]{ANSI_END}")
+            print_above(f"{ANSI_LIGHT_GRAY}{chan_name:>10} {ANSI_GREEN}{message[0:25]:25} {ANSI_LIGHT_GRAY}({event.payload['snr']:6,.2f},{event.payload['rssi']:4}){ANSI_YELLOW} [{path}]{ANSI_END}")
             
 handle_log_rx.json_log_rx = False
 handle_log_rx.log_channels = False
