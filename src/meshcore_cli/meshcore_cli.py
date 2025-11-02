@@ -1187,6 +1187,7 @@ async def set_channel (mc, chan, name, key=None):
         return None
 
     info = res.payload
+    info["channel_hash"] = sha256(info["channel_secret"]).digest()[0:1].hex()
     info["channel_secret"] = info["channel_secret"].hex()
 
     if hasattr(mc,'channels') :
