@@ -54,6 +54,7 @@ ANSI_INVERT = "\033[7m"
 ANSI_NORMAL = "\033[27m"
 ANSI_GREEN = "\033[0;32m"
 ANSI_BGREEN = "\033[1;32m"
+ANSI_DGREEN="\033[0;38;5;22m"
 ANSI_BLUE = "\033[0;34m"
 ANSI_BBLUE = "\033[1;34m"
 ANSI_RED = "\033[0;31m"
@@ -224,7 +225,10 @@ async def handle_log_rx(event):
                 cipher = AES.new(aes_key, AES.MODE_ECB)
                 message = cipher.decrypt(msg)[5:].decode("utf-8").strip("\x00")
             
-            print_above(f"{ANSI_LIGHT_GRAY}{chan_name:>10} {ANSI_GREEN}{message[0:25]:25} {ANSI_LIGHT_GRAY}({event.payload['snr']:6,.2f},{event.payload['rssi']:4}){ANSI_YELLOW} [{path}]{ANSI_END}")
+            width = os.get_terminal_size().columns
+            cars = width - 13 - 2 * path_len - len(chan_name) - 1
+            dispmsg = message[0:cars]
+            print_above(f"{ANSI_LIGHT_GRAY}{chan_name} {ANSI_DGREEN}{dispmsg+(cars-len(dispmsg))*" "} {ANSI_YELLOW}[{path}]{ANSI_LIGHT_GRAY}{event.payload['snr']:6,.2f}{event.payload['rssi']:4}{ANSI_END}")
             
 handle_log_rx.json_log_rx = False
 handle_log_rx.log_channels = False
@@ -777,8 +781,11 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
 
             # raw meshcli command as on command line
             elif line.startswith("$") :
-                args = shlex.split(line[1:])
-                await process_cmds(mc, args)
+                try :
+                    args = shlex.split(line[1:])
+                    await process_cmds(mc, args)
+                except ValueError:
+                    logger.error("Error parsing line {line[1:]}")
 
             elif line.startswith("/") :
                 path = line.split(" ", 1)[0]
@@ -795,7 +802,10 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                         if len(args)>1 and not ch is None: # a channel, send message
                             await send_chan_msg(mc, ch["channel_idx"], line.split(" ", 1)[1])
                         else :
-                            await process_cmds(mc, shlex.split(line[1:]))
+                            try :
+                                await process_cmds(mc, shlex.split(line[1:]))
+                            except ValueError:
+                                logger.error(f"Error processing line{line[1:]}")
                 else:
                     cmdline = line[1:].split("/",1)[1]
                     contact_name = path[1:].split("/",1)[0]
@@ -874,8 +884,11 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
 
             # commands are passed through if at root
             elif contact is None or line.startswith(".") :
-                args = shlex.split(line)
-                await process_cmds(mc, args)
+                try:
+                    args = shlex.split(line)
+                    await process_cmds(mc, args)
+                except ValueError:
+                    logger.error(f"Error processing {line}")
 
             elif await process_contact_chat_line(mc, contact, line):
                 pass
@@ -2709,8 +2722,11 @@ async def process_script(mc, file, json_output=False):
         line = line.strip()
         if not (line == "" or line[0] == "#"):
             logger.debug(f"processing {line}")
-            cmds = shlex.split(line)
-            await process_cmds(mc, cmds, json_output)
+            try :
+                cmds = shlex.split(line)
+                await process_cmds(mc, cmds, json_output)
+            except ValueError:
+                logger.error(f"Error processing {line}")
 
 def version():
     print (f"meshcore-cli: command line interface to MeshCore companion radios {VERSION}")
