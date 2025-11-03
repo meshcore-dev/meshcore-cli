@@ -26,13 +26,14 @@ from prompt_toolkit.completion.word_completer import WordCompleter
 from prompt_toolkit.document import Document
 from hashlib import sha256
 from Crypto.Cipher import AES
+from Crypto.Hash import HMAC, SHA256
 
 import re
 
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.2.2"
+VERSION = "v1.2.3"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -213,9 +214,17 @@ async def handle_log_rx(event):
             path_len = pkt[1]
             path = pkt[2:path_len+2].hex()
             chan_hash = pkt[path_len+2:path_len+3].hex()
-            cipher_mac = int.from_bytes(pkt[path_len+3:path_len+5], byteorder="little")
+            cipher_mac = pkt[path_len+3:path_len+5]
             msg = pkt[path_len+5:]
-            channel = await get_channel_by_hash(mc, chan_hash)
+            channel = None
+            for c in await get_channels(mc):
+                if c["channel_hash"] == chan_hash : # validate against MAC
+                    h = HMAC.new(bytes.fromhex(c["channel_secret"]), digestmod=SHA256)
+                    h.update(msg)
+                    if h.digest()[0:2] == cipher_mac:
+                        channel = c
+                        break
+
             if channel is None :
                 chan_name = chan_hash
                 message = msg.hex()
@@ -1219,16 +1228,6 @@ async def get_channel_by_name (mc, name):
 
     for c in mc.channels:
         if c['channel_name'] == name:
-            return c
-
-    return None
-
-async def get_channel_by_hash (mc, hash):
-    if not hasattr(mc, 'channels') :
-        await get_channels(mc)
-
-    for c in mc.channels:
-        if c['channel_hash'] == hash:
             return c
 
     return None
