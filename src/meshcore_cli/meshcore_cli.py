@@ -211,6 +211,7 @@ async def handle_log_rx(event):
 
     if handle_log_rx.channel_echoes:
         if pkt[0] == 0x15: 
+            chan_name = ""
             path_len = pkt[1]
             path = pkt[2:path_len+2].hex()
             chan_hash = pkt[path_len+2:path_len+3].hex()
@@ -226,27 +227,29 @@ async def handle_log_rx(event):
                         break
 
             if channel is None :
-                chan_name = chan_hash
-                message = msg.hex()
+                if handle_log_rx.echo_unk_chans:
+                    chan_name = chan_hash
+                    message = msg.hex()
             else:
                 chan_name = channel["channel_name"]
                 aes_key = bytes.fromhex(channel["channel_secret"])
                 cipher = AES.new(aes_key, AES.MODE_ECB)
                 message = cipher.decrypt(msg)[5:].decode("utf-8").strip("\x00")
             
-            width = os.get_terminal_size().columns
-            cars = width - 13 - 2 * path_len - len(chan_name) - 1
-            dispmsg = message[0:cars]
-            txt = f"{ANSI_LIGHT_GRAY}{chan_name} {ANSI_DGREEN}{dispmsg+(cars-len(dispmsg))*' '} {ANSI_YELLOW}[{path}]{ANSI_LIGHT_GRAY}{event.payload['snr']:6,.2f}{event.payload['rssi']:4}{ANSI_END}"
-            if handle_message.above:
-                print_above(txt)
-            else:
-                print(txt)
-            return
+            if chan_name != "" :
+                width = os.get_terminal_size().columns
+                cars = width - 13 - 2 * path_len - len(chan_name) - 1
+                dispmsg = message[0:cars]
+                txt = f"{ANSI_LIGHT_GRAY}{chan_name} {ANSI_DGREEN}{dispmsg+(cars-len(dispmsg))*' '} {ANSI_YELLOW}[{path}]{ANSI_LIGHT_GRAY}{event.payload['snr']:6,.2f}{event.payload['rssi']:4}{ANSI_END}"
+                if handle_message.above:
+                    print_above(txt)
+                else:
+                    print(txt)
             
 handle_log_rx.json_log_rx = False
 handle_log_rx.channel_echoes = False
 handle_log_rx.mc = None
+handle_log_rx.echo_unk_chans=False
 
 async def handle_advert(event):
     if not handle_advert.print_adverts:
@@ -474,6 +477,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "print_adverts" : {"on":None, "off":None},
             "json_log_rx" : {"on":None, "off":None},
             "channel_echoes" : {"on":None, "off":None},
+            "echo_unk_chans" : {"on":None, "off":None},
             "print_new_contacts" : {"on": None, "off":None},
             "print_path_updates" : {"on":None,"off":None},
             "classic_prompt" : {"on" : None, "off":None},
@@ -503,6 +507,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "print_adverts":None,
             "json_log_rx":None,
             "channel_echoes":None,
+            "echo_unk_chans":None,
             "print_path_updates":None,
             "print_new_contacts":None,
             "classic_prompt":None,
@@ -1524,6 +1529,10 @@ async def next_cmd(mc, cmds, json_output=False):
                         handle_log_rx.channel_echoes = (cmds[2] == "on")
                         if json_output :
                             print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
+                    case "echo_unk_chans" :
+                        handle_log_rx.echo_unk_chans = (cmds[2] == "on")
+                        if json_output :
+                            print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
                     case "print_adverts" :
                         handle_advert.print_adverts = (cmds[2] == "on")
                         if json_output :
@@ -1764,6 +1773,11 @@ async def next_cmd(mc, cmds, json_output=False):
                             print(json.dumps({"channel_echoes" : handle_log_rx.channel_echoes}))
                         else:
                             print(f"{'on' if handle_log_rx.channel_echoes else 'off'}")
+                    case "echo_unk_chans":
+                        if json_output :
+                            print(json.dumps({"echo_unk_chans" : handle_log_rx.echo_unk_chans}))
+                        else:
+                            print(f"{'on' if handle_log_rx.echo_unk_chans else 'off'}")
                     case "print_adverts":
                         if json_output :
                             print(json.dumps({"print_adverts" : handle_advert.print_adverts}))
