@@ -209,7 +209,7 @@ async def handle_log_rx(event):
 
     pkt = bytes().fromhex(event.payload["payload"])
 
-    if handle_log_rx.log_channels:
+    if handle_log_rx.channel_echoes:
         if pkt[0] == 0x15: 
             path_len = pkt[1]
             path = pkt[2:path_len+2].hex()
@@ -245,7 +245,7 @@ async def handle_log_rx(event):
             return
             
 handle_log_rx.json_log_rx = False
-handle_log_rx.log_channels = False
+handle_log_rx.channel_echoes = False
 handle_log_rx.mc = None
 
 async def handle_advert(event):
@@ -473,7 +473,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "print_name" : {"on":None, "off":None},
             "print_adverts" : {"on":None, "off":None},
             "json_log_rx" : {"on":None, "off":None},
-            "log_channels" : {"on":None, "off":None},
+            "channel_echoes" : {"on":None, "off":None},
             "print_new_contacts" : {"on": None, "off":None},
             "print_path_updates" : {"on":None,"off":None},
             "classic_prompt" : {"on" : None, "off":None},
@@ -502,7 +502,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "print_name":None,
             "print_adverts":None,
             "json_log_rx":None,
-            "log_channels":None,
+            "channel_echoes":None,
             "print_path_updates":None,
             "print_new_contacts":None,
             "classic_prompt":None,
@@ -1520,8 +1520,8 @@ async def next_cmd(mc, cmds, json_output=False):
                         handle_log_rx.json_log_rx = (cmds[2] == "on")
                         if json_output :
                             print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
-                    case "log_channels" :
-                        handle_log_rx.log_channels = (cmds[2] == "on")
+                    case "channel_echoes" :
+                        handle_log_rx.channel_echoes = (cmds[2] == "on")
                         if json_output :
                             print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
                     case "print_adverts" :
@@ -1759,11 +1759,11 @@ async def next_cmd(mc, cmds, json_output=False):
                             print(json.dumps({"json_log_rx" : handle_log_rx.json_log_rx}))
                         else:
                             print(f"{'on' if handle_log_rx.json_log_rx else 'off'}")
-                    case "log_channels":
+                    case "channel_echoes":
                         if json_output :
-                            print(json.dumps({"log_channels" : handle_log_rx.log_channels}))
+                            print(json.dumps({"channel_echoes" : handle_log_rx.channel_echoes}))
                         else:
-                            print(f"{'on' if handle_log_rx.log_channels else 'off'}")
+                            print(f"{'on' if handle_log_rx.channel_echoes else 'off'}")
                     case "print_adverts":
                         if json_output :
                             print(json.dumps({"print_adverts" : handle_advert.print_adverts}))
