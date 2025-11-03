@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "meshcore-cli"
-version = "1.2.3"
+version = "1.2.4"
 authors = [
   { name="Florent de Lamotte", email="florent@frizoncorrea.fr" },
 ]
