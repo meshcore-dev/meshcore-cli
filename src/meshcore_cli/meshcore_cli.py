@@ -401,6 +401,10 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
 
     pit = iter(pending.items())
     for c in pit :
+        pending_list[c[1]['adv_name']] = None
+
+    pit = iter(pending.items())
+    for c in pit :
         pending_list[c[1]['public_key']] = None
 
     to_list.update(contact_list)
@@ -2369,6 +2373,13 @@ async def next_cmd(mc, cmds, json_output=False):
             case "add_pending":
                 argnum = 1
                 contact = mc.pop_pending_contact(cmds[1])
+                if contact is None: # try to find by name
+                    key = None
+                    for c in mc.pending_contacts.items():
+                        if c[1]['adv_name'] == cmds[1]:
+                            key = c[1]['public_key']
+                            contact = mc.pop_pending_contact(key)
+                            break
                 if contact is None:
                     if json_output:
                         print(json.dumps({"error":"Contact does not exist"}))
