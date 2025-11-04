@@ -2718,7 +2718,7 @@ async def next_cmd(mc, cmds, json_output=False):
                 await mc.ensure_contacts()
                 contact = mc.get_contact_by_name(cmds[0])
                 if contact is None:
-                    logger.error(f"Unknown command : {cmd}, will exit ...")
+                    logger.error(f"Unknown command : {cmd}. {cmds} not executed ...")
                     return None
 
                 await interactive_loop(mc, to=contact)
@@ -2727,7 +2727,7 @@ async def next_cmd(mc, cmds, json_output=False):
         return cmds[argnum+1:]
 
     except IndexError:
-        logger.error("Error in parameters, returning")
+        logger.error("Error in parameters")
         return None
     except EOFError:
         logger.error("Cancelled")
