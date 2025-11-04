@@ -33,7 +33,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.2.4"
+VERSION = "v1.2.5"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -2812,7 +2812,7 @@ def command_help():
     req_mma <ct>           : requests min/max/avg for a sensor      rm
     req_acl <ct>           : requests access control list for sensor
     pending_contacts       : show pending contacts
-    add_pending <key>      : manually add pending contact from key
+    add_pending <pending>  : manually add pending contact
     flush_pending          : flush pending contact list
   Repeaters
     login <name> <pwd>     : log into a node (rep) with given pwd   l
