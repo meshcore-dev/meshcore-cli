@@ -806,6 +806,9 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
             if line == "" : # blank line
                 pass
 
+            elif line.startswith("?") :
+                get_help_for(line[1:], context="chat")
+
             # raw meshcli command as on command line
             elif line.startswith("$") :
                 try :
@@ -980,7 +983,7 @@ async def process_contact_chat_line(mc, contact, line):
     if line.startswith("contact_name") or line.startswith("cn"):
         print(contact['adv_name'],end="")
         if " " in line:
-            print(" ", end="")
+            print(" ", end="", flush=True)
             secline = line.split(" ", 1)[1]
             await process_contact_chat_line(mc, contact, secline)
         else:
@@ -1159,6 +1162,8 @@ async def apply_command_to_contacts(mc, contact_filter, line):
     min_hops = None
     max_hops = None
 
+    await mc.ensure_contacts()
+
     filters = contact_filter.split(",")
     for f in filters:
         if f == "all":
@@ -1229,7 +1234,7 @@ async def apply_command_to_contacts(mc, contact_filter, line):
                  contact["type"] == 4 : # repeater, room, sensor send cmd
                 await process_cmds(mc, ["cmd", contact["adv_name"], line])
                 # wait for a reply from cmd
-                await mc.wait_for_event(EventType.MESSAGES_WAITING)
+                await mc.wait_for_event(EventType.MESSAGES_WAITING, timeout=7)
 
             else:
                 logger.error(f"Can't send {line} to {contact['adv_name']}")
@@ -1504,6 +1509,11 @@ async def next_cmd(mc, cmds, json_output=False):
     """ process next command """
     try :
         argnum = 0
+
+        if cmds[0].startswith("?") : # get some help
+            get_help_for(cmds[0][1:], context="line")
+            return cmds[argnum+1:]
+
         if cmds[0].startswith(".") : # override json_output
             json_output = True
             cmd = cmds[0][1:]
@@ -1593,6 +1603,10 @@ async def next_cmd(mc, cmds, json_output=False):
                     print(json.dumps(res.payload, indent=4))
                 else:
                     print("Time set")
+
+            case "apply_to"|"at":
+                argnum = 2
+                await apply_command_to_contacts(mc, cmds[1], cmds[2])
 
             case "set":
                 argnum = 2
@@ -2871,7 +2885,8 @@ def version():
     print (f"meshcore-cli: command line interface to MeshCore companion radios {VERSION}")
 
 def command_help():
-    print("""  General commands
+    print("""    ?<cmd> may give you some more help about cmd
+  General commands
     chat                   : enter the chat (interactive) mode
     chat_to <ct>           : enter chat with contact                to
     script <filename>      : execute commands in filename
@@ -2882,6 +2897,7 @@ def command_help():
     reboot                 : reboots node
     sleep <secs>           : sleeps for a given amount of secs      s
     wait_key               : wait until user presses <Enter>        wk
+    apply_to <scope> <cmds>: sends cmds to contacts matching scope  at
   Messenging
     msg <name> <msg>       : send message to node by name           m  {
     wait_ack               : wait an ack                            wa }
@@ -2955,6 +2971,30 @@ def usage () :
 
  Available Commands and shorcuts (can be chained) :""")
     command_help()
+
+def get_help_for (cmdname, context="line") :
+    if cmdname == "apply_to" or cmdname == "at" :
+        print("""apply_to <scope> <cmd> : applies cmd to contacts matching scope
+    Scope acts like a filter with comma separated fields :
+     - u, matches modification time < or > than a timestamp
+            (can also be days hours or minutes ago if followed by d,h or m)
+     - t, matches the type (1: client, 2: repeater, 3: room, 4: sensor)
+     - h, matches number of hops
+     - d, direct, similar to h>-1
+     - f, flood, similar to h<0 or h=-1
+
+    Note: Some commands like contact_name (aka cn), reset_path (aka rp), forget_password (aka fp) can be chained.
+
+    Examples:
+        # removes all clients that have not been updated in last 2 days
+        at u<2d,t=1 remove_contact
+        # gives traces to repeaters that have been updated in the last 24h and are direct
+        at t=2,u>1d,d cn trace
+        # tries to do flood login to all repeaters
+        at t=2 rp login
+        """)
+    else:
+        print(f"Sorry, no help yet for {cmdname}")
 
 async def main(argv):
     """ Do the job """
