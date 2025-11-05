@@ -4,7 +4,7 @@
 """
 
 import asyncio
-import os, sys
+import os, sys, io
 import time, datetime
 import getopt, json, shlex, re
 import logging
@@ -208,22 +208,19 @@ async def handle_log_rx(event):
         return
 
     pkt = bytes().fromhex(event.payload["payload"])
+    pbuf = io.BytesIO(pkt)
+    header = pbuf.read(1)[0]
 
-    if handle_log_rx.channel_echoes:
-        if pkt[0] & ~1 == 0x14:
-            chan_name = ""
-            if pkt[0] & 1: #no transport code
-                path_len = pkt[1]
-                path = pkt[2:path_len+2].hex()
-                path_end = path_len+2
-            else:
-                path_len = pkt[5]
-                path = pkt[6:path_len+6].hex()
-                path_end = path_len+6
+    if header & ~1 == 0x14: # flood msg / channel
+        if handle_log_rx.channel_echoes:
+            if header & 1 == 0: # has transport code
+                pbuf.read(4)    # discard transport code
+            path_len = pbuf.read(1)[0]
+            path = pbuf.read(path_len).hex()
+            chan_hash = pbuf.read(1).hex()
+            cipher_mac = pbuf.read(2)
+            msg = pbuf.read() # until the end of buffer
 
-            chan_hash = pkt[path_end:path_end+1].hex()
-            cipher_mac = pkt[path_end+1:path_end+3]
-            msg = pkt[path_end+3:]
             channel = None
             for c in await get_channels(mc):
                 if c["channel_hash"] == chan_hash : # validate against MAC
@@ -232,6 +229,8 @@ async def handle_log_rx(event):
                     if h.digest()[0:2] == cipher_mac:
                         channel = c
                         break
+
+            chan_name = ""
 
             if channel is None :
                 if handle_log_rx.echo_unk_chans:
