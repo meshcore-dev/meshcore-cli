@@ -328,7 +328,7 @@ async def log_message(mc, msg):
     if msg["type"] == "PRIV" :
         ct = mc.get_contact_by_key_prefix(msg['pubkey_prefix'])
         if ct is None:
-            msg["name"] = data["pubkey_prefix"]
+            msg["name"] = msg["pubkey_prefix"]
         else:
             msg["name"] = ct["adv_name"]
     elif msg["type"] == "CHAN" :
@@ -2107,6 +2107,12 @@ async def next_cmd(mc, cmds, json_output=False):
                     res = await set_channel(mc, cmds[1], cmds[2], bytes.fromhex(cmds[3]))
                 if res is None:
                     print("Error setting channel")
+
+            case "scope":
+                argnum = 1
+                res = await mc.commands.set_flood_scope(cmds[1])
+                if res is None or res.type == EventType.ERROR:
+                    print(f"Error while setting scope")
 
             case "remove_channel":
                 argnum = 1
