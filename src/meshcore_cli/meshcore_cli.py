@@ -210,13 +210,20 @@ async def handle_log_rx(event):
     pkt = bytes().fromhex(event.payload["payload"])
 
     if handle_log_rx.channel_echoes:
-        if pkt[0] == 0x15:
+        if pkt[0] & ~1 == 0x14:
             chan_name = ""
-            path_len = pkt[1]
-            path = pkt[2:path_len+2].hex()
-            chan_hash = pkt[path_len+2:path_len+3].hex()
-            cipher_mac = pkt[path_len+3:path_len+5]
-            msg = pkt[path_len+5:]
+            if pkt[0] & 1: #no transport code
+                path_len = pkt[1]
+                path = pkt[2:path_len+2].hex()
+                path_end = path_len+2
+            else:
+                path_len = pkt[5]
+                path = pkt[6:path_len+6].hex()
+                path_end = path_len+6
+
+            chan_hash = pkt[path_end:path_end+1].hex()
+            cipher_mac = pkt[path_end+1:path_end+3]
+            msg = pkt[path_end+3:]
             channel = None
             for c in await get_channels(mc):
                 if c["channel_hash"] == chan_hash : # validate against MAC
