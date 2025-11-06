@@ -33,7 +33,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.2.6"
+VERSION = "v1.2.7"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -451,6 +451,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
         "share_contact" : contact_list,
         "path": contact_list,
         "disc_path" : contact_list,
+        "node_discover": {"all":None, "sens":None, "rep":None, "comp":None, "room":None, "cli":None},
         "trace" : None,
         "reset_path" : contact_list,
         "change_path" : contact_list,
@@ -580,6 +581,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
         "neighbors" : None,
         "req_acl":None,
         "setperm":contact_list,
+        "region" : {"get":None, "allowf": None, "denyf": None, "put": None, "remove": None, "save": None, "home": None},
         "gps" : {"on":None,"off":None,"sync":None,"setloc":None,
             "advert" : {"none": None, "share": None, "prefs": None},
         },
@@ -2217,7 +2219,7 @@ async def next_cmd(mc, cmds, json_output=False):
                 argnum = 2
                 dest = None
 
-                if len(cmds[1]) == 12: # possibly an hex prefix 
+                if len(cmds[1]) == 12: # possibly an hex prefix
                     try:
                         dest = bytes.fromhex(cmds[1])
                     except ValueError:
@@ -2414,6 +2416,52 @@ async def next_cmd(mc, cmds, json_output=False):
                             inp = res['in_path']
                             inp = inp if inp != "" else "direct"
                             print(f"Path for {contact['adv_name']}: out {outp}, in {inp}")
+
+            case "node_discover"|"nd" :
+                argnum = 1
+                try: # try to decode type as int
+                    types = int(cmds[1])
+                except ValueError:
+                    if "all" in cmds[1]:
+                        types = 0xFF
+                    else :
+                        types = 0
+                        if "rep" in cmds[1]:
+                            types = types | 4
+                        if "cli" in cmds[1] or "comp" in cmds[1]:
+                            types = types | 2
+                        if "room" in cmds[1]:
+                            types = types | 8
+                        if "sens" in cmds[1]:
+                            types = types | 16
+
+                res = await mc.commands.send_node_discover_req(types)
+                if res is None or res.type == EventType.ERROR:
+                    print("Error sending discover request")
+                else:
+                    exp_tag = res.payload["tag"].to_bytes(4, "little").hex()
+                    dn = []
+                    while True:
+                        r = await mc.wait_for_event(
+                            EventType.DISCOVER_RESPONSE,
+                            attribute_filters={"tag":exp_tag},
+                            timeout = 5
+                        )
+                        if r is None or r.type == EventType.ERROR:
+                            break
+                        else:
+                            dn.append(r.payload)
+
+                    if json_output:
+                        print(json.dumps(dn))
+                    else:
+                        await mc.ensure_contacts()
+                        print(f"Discovered {len(dn)} nodes:")
+                        for n in dn:
+                            name = mc.get_contact_by_key_prefix(n["pubkey"])['adv_name']
+                            if name is None:
+                                name = n["pubkey"][0:12]
+                            print(f" {name:12} type {n['node_type']} SNR: {n['SNR_in']:6,.2f}->{n['SNR']:6,.2f} RSSI: ->{n['RSSI']:4}")
 
             case "req_btelemetry"|"rbt" :
                 argnum = 1
@@ -2968,6 +3016,7 @@ def command_help():
     time <epoch>           : sets time to given epoch
     clock                  : get current time
     clock sync             : sync device clock                      st
+    node_discover <filter> : discovers nodes based on their type    nd
   Contacts
     contacts / list        : gets contact list                      lc
     reload_contacts        : force reloading all contacts           rc
@@ -3041,7 +3090,18 @@ def get_help_for (cmdname, context="line") :
         at t=2,u>1d,d cn trace
         # tries to do flood login to all repeaters
         at t=2 rp login
-        """)
+""")
+
+    if cmdname == "node_discover" or cmdname == "nd" :
+        print("""node_discover <filter> : discovers 0-hop nodes and displays signal info
+
+    filter can be "all" for all types or nodes or a comma separated list consisting of :
+     - cli or comp for companions
+     - rep for repeaters
+     - sens for sensors
+     - room for chat rooms
+""")
+
     else:
         print(f"Sorry, no help yet for {cmdname}")
 
