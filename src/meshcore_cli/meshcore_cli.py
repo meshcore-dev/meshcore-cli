@@ -473,6 +473,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
         "remove_channel": None,
         "apply_to": None,
         "at": None,
+        "scope": None,
         "set" : {
             "name" : None,
             "pin" : None,
@@ -707,6 +708,14 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
     contact = to
     prev_contact = None
 
+    res = await mc.commands.set_flood_scope("0")
+    if res is None or res.type == EventType.ERROR: 
+        scope = None
+        prev_scope = None
+    else:
+        scope = "*"
+        prev_scope = "*"
+
     await get_contacts(mc, anim=True)
     await get_channels(mc, anim=True)
     await subscribe_to_msgs(mc, above=True)
@@ -758,6 +767,9 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
             if print_name or contact is None :
                 prompt = prompt + f"{ANSI_BGRAY}"
                 prompt = prompt + f"{mc.self_info['name']}"
+                if contact is None: # display scope
+                    if not scope is None:
+                        prompt = prompt + f"|{scope}"
                 if classic :
                     prompt = prompt + " > "
                 else :
@@ -785,6 +797,17 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                     prompt = prompt + f"{ANSI_NORMAL}🭨{ANSI_INVERT}"
 
                 prompt = prompt + f"{contact['adv_name']}"
+                if contact["type"] == 0 or contact["out_path_len"]==-1:
+                    if scope is None:
+                        prompt = prompt + f"|*"
+                    else:
+                        prompt = prompt + f"|{scope}"
+                else: # display path to dest or 0 if 0 hop
+                    if contact["out_path_len"] == 0:
+                        prompt = prompt + f"|0"
+                    else:
+                        prompt = prompt + "|" + contact["out_path"]
+
                 if classic :
                     prompt = prompt + f"{ANSI_NORMAL} > "
                 else:
@@ -822,6 +845,12 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                     await process_cmds(mc, args)
                 except ValueError:
                     logger.error("Error parsing line {line[1:]}")
+
+            elif line.startswith("/scope") :
+                if not scope is None:
+                    prev_scope = scope
+                    newscope = line.split(" ", 1)[1]
+                    scope = await set_scope(mc, newscope)
 
             elif line.startswith("/") :
                 path = line.split(" ", 1)[0]
@@ -1306,6 +1335,14 @@ async def msg_ack (mc, contact, msg) :
 msg_ack.max_attempts=3
 msg_ack.flood_after=2
 msg_ack.max_flood_attempts=1
+
+async def set_scope (mc, scope) :
+    if scope == "None" or scope == "0" or scope == "clear" or scope == "":
+        scope = "*"
+    res = await mc.commands.set_flood_scope(scope)
+    if res is None or res.type == EventType.ERROR:
+        return None
+    return scope
 
 async def get_channel (mc, chan) :
     if not chan.isnumeric():
@@ -2110,8 +2147,8 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "scope":
                 argnum = 1
-                res = await mc.commands.set_flood_scope(cmds[1])
-                if res is None or res.type == EventType.ERROR:
+                res = await set_scope(mc, cmds[1])
+                if res is None:
                     print(f"Error while setting scope")
 
             case "remove_channel":
