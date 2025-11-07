@@ -33,7 +33,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.2.7"
+VERSION = "v1.2.8"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -711,7 +711,7 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
     prev_contact = None
 
     res = await mc.commands.set_flood_scope("0")
-    if res is None or res.type == EventType.ERROR: 
+    if res is None or res.type == EventType.ERROR:
         scope = None
         prev_scope = None
     else:
@@ -2419,6 +2419,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "node_discover"|"nd" :
                 argnum = 1
+                prefix_only = True
                 try: # try to decode type as int
                     types = int(cmds[1])
                 except ValueError:
@@ -2435,7 +2436,10 @@ async def next_cmd(mc, cmds, json_output=False):
                         if "sens" in cmds[1]:
                             types = types | 16
 
-                res = await mc.commands.send_node_discover_req(types)
+                if "full" in cmds[1]:
+                    prefix_only = False
+
+                res = await mc.commands.send_node_discover_req(types, prefix_only=prefix_only)
                 if res is None or res.type == EventType.ERROR:
                     print("Error sending discover request")
                 else:
@@ -2458,10 +2462,20 @@ async def next_cmd(mc, cmds, json_output=False):
                         await mc.ensure_contacts()
                         print(f"Discovered {len(dn)} nodes:")
                         for n in dn:
-                            name = mc.get_contact_by_key_prefix(n["pubkey"])['adv_name']
+                            name = f"{n['pubkey'][0:2]} {mc.get_contact_by_key_prefix(n['pubkey'])['adv_name']}"
                             if name is None:
-                                name = n["pubkey"][0:12]
-                            print(f" {name:12} type {n['node_type']} SNR: {n['SNR_in']:6,.2f}->{n['SNR']:6,.2f} RSSI: ->{n['RSSI']:4}")
+                                name = n["pubkey"][0:16]
+                            type = f"t:{n['node_type']}"
+                            if n['node_type'] == 1:
+                                type = "cli"
+                            elif n['node_type'] == 2:
+                                type = "rep"
+                            elif n['node_type'] == 3:
+                                type = "room"
+                            elif n['node_type'] == 4:
+                                type = "sens"
+
+                            print(f" {name:16} {type:>4} SNR: {n['SNR_in']:6,.2f}->{n['SNR']:6,.2f} RSSI: ->{n['RSSI']:4}")
 
             case "req_btelemetry"|"rbt" :
                 argnum = 1
