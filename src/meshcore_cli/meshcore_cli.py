@@ -3119,6 +3119,8 @@ def get_help_for (cmdname, context="line") :
      - rep for repeaters
      - sens for sensors
      - room for chat rooms
+
+    nd can be used with no filter parameter ... !!! BEWARE WITH CHAINING !!!
 """)
 
     else:
