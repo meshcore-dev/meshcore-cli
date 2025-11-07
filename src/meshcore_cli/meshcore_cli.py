@@ -2420,24 +2420,29 @@ async def next_cmd(mc, cmds, json_output=False):
             case "node_discover"|"nd" :
                 argnum = 1
                 prefix_only = True
-                try: # try to decode type as int
-                    types = int(cmds[1])
-                except ValueError:
-                    if "all" in cmds[1]:
-                        types = 0xFF
-                    else :
-                        types = 0
-                        if "rep" in cmds[1]:
-                            types = types | 4
-                        if "cli" in cmds[1] or "comp" in cmds[1]:
-                            types = types | 2
-                        if "room" in cmds[1]:
-                            types = types | 8
-                        if "sens" in cmds[1]:
-                            types = types | 16
 
-                if "full" in cmds[1]:
-                    prefix_only = False
+                if len(cmds) == 1:
+                    argnum = 0
+                    types = 0xFF
+                else:
+                    try: # try to decode type as int
+                        types = int(cmds[1])
+                    except ValueError:
+                        if "all" in cmds[1]:
+                            types = 0xFF
+                        else :
+                            types = 0
+                            if "rep" in cmds[1]:
+                                types = types | 4
+                            if "cli" in cmds[1] or "comp" in cmds[1]:
+                                types = types | 2
+                            if "room" in cmds[1]:
+                                types = types | 8
+                            if "sens" in cmds[1]:
+                                types = types | 16
+
+                    if "full" in cmds[1]:
+                        prefix_only = False
 
                 res = await mc.commands.send_node_discover_req(types, prefix_only=prefix_only)
                 if res is None or res.type == EventType.ERROR:
