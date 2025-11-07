@@ -710,13 +710,7 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
     contact = to
     prev_contact = None
 
-    res = await mc.commands.set_flood_scope("0")
-    if res is None or res.type == EventType.ERROR:
-        scope = None
-        prev_scope = None
-    else:
-        scope = "*"
-        prev_scope = "*"
+    scope = await set_scope(mc, "*")
 
     await get_contacts(mc, anim=True)
     await get_channels(mc, anim=True)
@@ -756,6 +750,9 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
 
         last_ack = True
         while True:
+            # reset scope (if changed)
+            scope = await set_scope(mc, scope)
+
             color = process_event_message.color
             classic = interactive_loop.classic or not color
             print_name = interactive_loop.print_name
@@ -834,6 +831,8 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                                               completer=completer,
                                               key_bindings=bindings)
 
+            line = line.strip()
+
             if line == "" : # blank line
                 pass
 
@@ -848,24 +847,41 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                 except ValueError:
                     logger.error("Error parsing line {line[1:]}")
 
-            elif line.startswith("/scope") :
+            elif line.startswith("/scope") or\
+                    line.startswith("scope") and contact is None:
                 if not scope is None:
                     prev_scope = scope
-                    newscope = line.split(" ", 1)[1]
-                    scope = await set_scope(mc, newscope)
+                    try:
+                        newscope = line.split(" ", 1)[1]
+                        scope = await set_scope(mc, newscope)
+                    except IndexError:
+                        print(scope)
+
+            elif contact is None and (line.startswith("apply_to ") or line.startswith("at ")) or\
+                 line.startswith("/apply_to ") or line.startswith("/at ") :
+                try:
+                    await apply_command_to_contacts(mc, line.split(" ",2)[1], line.split(" ",2)[2])
+                except IndexError:
+                    logger.error(f"Error with apply_to command parameters")
 
             elif line.startswith("/") :
                 path = line.split(" ", 1)[0]
                 if path.count("/") == 1:
                     args = line[1:].split(" ")
-                    tct = mc.get_contact_by_name(args[0])
+                    dest = args[0]
+                    dest_scope = None
+                    if "%" in dest :
+                        dest_scope = dest.split("%")[-1]
+                        dest = dest[:-len(dest_scope)-1]
+                        await set_scope (mc, dest_scope)
+                    tct = mc.get_contact_by_name(dest)
                     if len(args)>1 and not tct is None: # a contact, send a message
                         if tct["type"] == 1 or tct["type"] == 3: # client or room
                             last_ack = await msg_ack(mc, tct, line.split(" ", 1)[1])
                         else:
                             print("Can only send msg to chan, client or room")
                     else :
-                        ch = await get_channel_by_name(mc, args[0])
+                        ch = await get_channel_by_name(mc, dest)
                         if len(args)>1 and not ch is None: # a channel, send message
                             await send_chan_msg(mc, ch["channel_idx"], line.split(" ", 1)[1])
                         else :
@@ -876,6 +892,11 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                 else:
                     cmdline = line[1:].split("/",1)[1]
                     contact_name = path[1:].split("/",1)[0]
+                    dest_scope = None
+                    if "%" in contact_name:
+                        dest_scope = contact_name.split("%")[-1]
+                        contact_name = contact_name[:-len(dest_scope)-1]
+                        await set_scope (mc, dest_scope)
                     tct = mc.get_contact_by_name(contact_name)
                     if tct is None:
                         print(f"{contact_name} is not a contact")
@@ -891,6 +912,10 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                 dest = line[3:]
                 if dest.startswith("\"") or dest.startswith("\'") : # if name starts with a quote
                     dest = shlex.split(dest)[0] # use shlex.split to get contact name between quotes
+                dest_scope = None
+                if '%' in dest and scope!=None :
+                    dest_scope = dest.split("%")[-1]
+                    dest = dest[:-len(dest_scope)-1]
                 nc = mc.get_contact_by_name(dest)
                 if nc is None:
                     if dest == "public" :
@@ -904,6 +929,8 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                             nc["adv_name"] = mc.channels[dest]["channel_name"]
                     elif dest == ".." : # previous recipient
                         nc = prev_contact
+                        if dest_scope is None and not scope is None:
+                            dest_scope = prev_scope
                     elif dest == "~" or dest == "/" or dest == mc.self_info['name']:
                         nc = None
                     elif dest == "!" :
@@ -921,6 +948,12 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                     last_ack = True
                     prev_contact = contact
                     contact = nc
+                if dest_scope is None:
+                    dest_scope = scope
+                if not scope is None and dest_scope != scope:
+                    prev_scope = scope
+                    if not dest_scope is None:
+                        scope = await set_scope(mc, dest_scope)
 
             elif line == "to" :
                 if contact is None :
@@ -948,13 +981,6 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                     last_ack = await msg_ack(mc, ln, line[1:])
                     if last_ack == False :
                         contact = ln
-
-            elif contact is None and\
-                    (line.startswith("apply_to ") or line.startswith("at ")):
-                try:
-                    await apply_command_to_contacts(mc, line.split(" ",2)[1], line.split(" ",2)[2])
-                except IndexError:
-                    logger.error(f"Error with apply_to command parameters")
 
             # commands are passed through if at root
             elif contact is None or line.startswith(".") :
@@ -1006,6 +1032,12 @@ interactive_loop.print_name = True
 async def process_contact_chat_line(mc, contact, line):
     if contact["type"] == 0:
         return False
+
+    # if one element in line (most cases) strip the scope and apply it
+    if not " " in line and "%" in line:
+        dest_scope = line.split("%")[-1]
+        line = line[:-len(dest_scope)-1]
+        await set_scope (mc, dest_scope)
 
     if line.startswith(":") : # : will send a command to current recipient
         args=["cmd", contact['adv_name'], line[1:]]
@@ -1121,15 +1153,21 @@ async def process_contact_chat_line(mc, contact, line):
         return True
 
     # same but for commands with a parameter
-    if line.startswith("cmd ") or line.startswith("msg ") or\
-            line.startswith("cp ") or line.startswith("change_path ") or\
-            line.startswith("cf ") or line.startswith("change_flags ") or\
-            line.startswith("req_binary ") or\
-            line.startswith("login ") :
+    if " " in line:
         cmds = line.split(" ", 1)
-        args = [cmds[0], contact['adv_name'], cmds[1]]
-        await process_cmds(mc, args)
-        return True
+        if "%" in cmds[0]:
+            dest_scope = cmds[0].split("%")[-1]
+            cmds[0] = cmds[0][:-len(dest_scope)-1]
+            await set_scope(mc, dest_scope)
+
+        if cmds[0] == "cmd" or cmds[0] == "msg" or\
+                cmds[0] == "cp" or cmds[0] == "change_path" or\
+                cmds[0] == "cf" or cmds[0] == "change_flags" or\
+                cmds[0] == "req_binary" or\
+                cmds[0] == "login" :
+            args = [cmds[0], contact['adv_name'], cmds[1]]
+            await process_cmds(mc, args)
+            return True
 
     if line == "login": # use stored password or prompt for it
         password_file = ""
@@ -1318,7 +1356,7 @@ async def send_msg (mc, contact, msg) :
 
 async def msg_ack (mc, contact, msg) :
     timeout = 0 if not 'timeout' in contact else contact['timeout']
-    res = await mc.commands.send_msg_with_retry(contact, msg, 
+    res = await mc.commands.send_msg_with_retry(contact, msg,
                 max_attempts=msg_ack.max_attempts,
                 flood_after=msg_ack.flood_after,
                 max_flood_attempts=msg_ack.max_flood_attempts,
@@ -1339,12 +1377,26 @@ msg_ack.flood_after=2
 msg_ack.max_flood_attempts=1
 
 async def set_scope (mc, scope) :
+    if not set_scope.has_scope:
+        return None
+
     if scope == "None" or scope == "0" or scope == "clear" or scope == "":
         scope = "*"
+
+    if set_scope.current_scope == scope:
+        return scope
+
     res = await mc.commands.set_flood_scope(scope)
     if res is None or res.type == EventType.ERROR:
+        if not res is None and res.payload["error_code"] == 1: #unsupported
+            set_scope.has_scope = False
         return None
+
+    set_scope.current_scope = scope
+
     return scope
+set_scope.has_scope = True
+set_scope.current_scope = None
 
 async def get_channel (mc, chan) :
     if not chan.isnumeric():
@@ -2432,7 +2484,7 @@ async def next_cmd(mc, cmds, json_output=False):
                             types = 0xFF
                         else :
                             types = 0
-                            if "rep" in cmds[1]:
+                            if "rep" in cmds[1] or "rpt" in cmds[1]:
                                 types = types | 4
                             if "cli" in cmds[1] or "comp" in cmds[1]:
                                 types = types | 2
@@ -2472,13 +2524,13 @@ async def next_cmd(mc, cmds, json_output=False):
                                 name = n["pubkey"][0:16]
                             type = f"t:{n['node_type']}"
                             if n['node_type'] == 1:
-                                type = "cli"
+                                type = "CLI"
                             elif n['node_type'] == 2:
-                                type = "rep"
+                                type = "REP"
                             elif n['node_type'] == 3:
-                                type = "room"
+                                type = "ROOM"
                             elif n['node_type'] == 4:
-                                type = "sens"
+                                type = "SENS"
 
                             print(f" {name:16} {type:>4} SNR: {n['SNR_in']:6,.2f}->{n['SNR']:6,.2f} RSSI: ->{n['RSSI']:4}")
 
