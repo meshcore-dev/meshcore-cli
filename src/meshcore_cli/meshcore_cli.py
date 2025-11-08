@@ -33,7 +33,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.2.10"
+VERSION = "v1.2.11"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -720,6 +720,7 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
     prev_contact = None
 
     scope = await set_scope(mc, "*")
+    prev_scope = scope
 
     await get_contacts(mc, anim=True)
     await get_channels(mc, anim=True)
@@ -937,7 +938,7 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                             nc["adv_name"] = mc.channels[dest]["channel_name"]
                     elif dest == ".." : # previous recipient
                         nc = prev_contact
-                        if dest_scope is None and not scope is None:
+                        if dest_scope is None and not prev_scope is None:
                             dest_scope = prev_scope
                     elif dest == "~" or dest == "/" or dest == mc.self_info['name']:
                         nc = None
