@@ -4,7 +4,7 @@
 """
 
 import asyncio
-import os, sys, io
+import os, sys, io, platform
 import time, datetime
 import getopt, json, shlex, re
 import logging
@@ -33,7 +33,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.2.8"
+VERSION = "v1.2.10"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -75,6 +75,15 @@ ANSI_BORANGE="\033[1;38;5;214m"
 #ANSI_BYELLOW="\033[1;38;5;226m"
 ANSI_YELLOW = "\033[0;33m"
 ANSI_BYELLOW = "\033[1;33m"
+
+#Unicode chars
+# some possible symbols for prompts 🭬🬛🬗🭬🬛🬃🬗🭬🬛🬃🬗🬏🭀🭋🭨🮋
+ARROW_TAIL = "🭨"
+ARROW_HEAD = "🭬"
+
+if platform.system() == 'Windows' or platform.system() == 'Darwin':
+    ARROW_TAIL = ""                                                   
+    ARROW_HEAD = " "                                                   
 
 def escape_ansi(line):
     ansi_escape = re.compile(r'(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]')
@@ -762,7 +771,6 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
             else:
                 prompt = f"{ANSI_INVERT}"
 
-            # some possible symbols for prompts 🭬🬛🬗🭬🬛🬃🬗🭬🬛🬃🬗🬏🭀🭋🭨🮋
             if print_name or contact is None :
                 prompt = prompt + f"{ANSI_BGRAY}"
                 prompt = prompt + f"{mc.self_info['name']}"
@@ -772,7 +780,7 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                 if classic :
                     prompt = prompt + " > "
                 else :
-                    prompt = prompt + f"{ANSI_NORMAL}🭬{ANSI_INVERT}"
+                    prompt = prompt + f"{ANSI_NORMAL}{ARROW_HEAD}{ANSI_INVERT}"
 
             if not contact is None :
                 if not last_ack:
@@ -793,7 +801,7 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                     prompt = prompt + f"{ANSI_INVERT}"
 
                 if print_name and not classic :
-                    prompt = prompt + f"{ANSI_NORMAL}🭨{ANSI_INVERT}"
+                    prompt = prompt + f"{ANSI_NORMAL}{ARROW_TAIL}{ANSI_INVERT}"
 
                 prompt = prompt + f"{contact['adv_name']}"
                 if contact["type"] == 0 or contact["out_path_len"]==-1:
@@ -810,7 +818,7 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                 if classic :
                     prompt = prompt + f"{ANSI_NORMAL} > "
                 else:
-                    prompt = prompt + f"{ANSI_NORMAL}🭬"
+                    prompt = prompt + f"{ANSI_NORMAL}{ARROW_HEAD}"
 
                 prompt = prompt + f"{ANSI_END}"
 
@@ -1604,6 +1612,7 @@ async def print_disc_trace_to (mc, contact):
 
 async def next_cmd(mc, cmds, json_output=False):
     """ process next command """
+    global ARROW_TAIL, ARROW_HEAD
     try :
         argnum = 0
 
@@ -1737,6 +1746,10 @@ async def next_cmd(mc, cmds, json_output=False):
                         interactive_loop.classic = (cmds[2] == "on")
                         if json_output :
                             print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
+                    case "arrow_tail":
+                        ARROW_TAIL = cmds[2]
+                    case "arrow_head":
+                        ARROW_HEAD = cmds[2]
                     case "color" :
                         process_event_message.color = (cmds[2] == "on")
                         if json_output :
@@ -2344,7 +2357,7 @@ async def next_cmd(mc, cmds, json_output=False):
                                 if classic :
                                     print("→",end="")
                                 else :
-                                    print(f"{ANSI_NORMAL}🭬",end="")
+                                    print(f"{ANSI_NORMAL}{ARROW_HEAD}",end="")
                                 print(ANSI_END, end="")
                                 if "hash" in t:
                                     print(f"[{t['hash']}]",end="")
