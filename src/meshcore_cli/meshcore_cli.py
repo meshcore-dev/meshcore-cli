@@ -4,7 +4,7 @@
 """
 
 import asyncio
-import os, sys, io
+import os, sys, io, platform
 import time, datetime
 import getopt, json, shlex, re
 import logging
@@ -1036,7 +1036,10 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
     except asyncio.CancelledError:
         # Handle task cancellation from KeyboardInterrupt in asyncio.run()
         print("Exiting cli")
-interactive_loop.classic = False
+if platform.system() == "Darwin" or platform.system() == "Windows":
+    interactive_loop.classic = True
+else:
+    interactive_loop.classic = False
 
 async def process_contact_chat_line(mc, contact, line):
     if contact["type"] == 0:
@@ -3130,6 +3133,7 @@ def usage () :
     -D : debug
     -S : scan for devices and show a selector
     -l : list available ble/serial devices and exit
+    -C              : toggles classic mode for prompt
     -c <on/off>     : disables most of color output if off
     -T <timeout>    : timeout for the ble scan (-S and -l) default 2s
     -a <address>    : specifies device address (can be a name)
@@ -3198,12 +3202,14 @@ async def main(argv):
         with open(MCCLI_ADDRESS, encoding="utf-8") as f :
             address = f.readline().strip()
 
-    opts, args = getopt.getopt(argv, "a:d:s:ht:p:b:fjDhvSlT:Pc:")
+    opts, args = getopt.getopt(argv, "a:d:s:ht:p:b:fjDhvSlT:Pc:C")
     for opt, arg in opts :
         match opt:
             case "-c" :
                 if arg == "off":
                     process_event_message.color = False
+            case "-C":
+                interactive_loop.classic = not interactive_loop.classic
             case "-d" : # name specified on cmdline
                 address = arg
             case "-a" : # address specified on cmdline
