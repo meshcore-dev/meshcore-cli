@@ -773,13 +773,14 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                 prompt = f"{ANSI_INVERT}"
 
             if print_name or contact is None :
-                prompt = prompt + f"{ANSI_BGRAY}"
+                if color:
+                    prompt = prompt + f"{ANSI_BGRAY}"
                 prompt = prompt + f"{mc.self_info['name']}"
                 if contact is None: # display scope
                     if not scope is None:
                         prompt = prompt + f"|{scope}"
                 if classic :
-                    prompt = prompt + " > "
+                    prompt = prompt + "> "
                 else :
                     prompt = prompt + f"{ANSI_NORMAL}{ARROW_HEAD}{ANSI_INVERT}"
 
@@ -817,7 +818,7 @@ Line starting with \"$\" or \".\" will issue a meshcli command.
                         prompt = prompt + "|" + contact["out_path"]
 
                 if classic :
-                    prompt = prompt + f"{ANSI_NORMAL} > "
+                    prompt = prompt + f"{ANSI_NORMAL}> "
                 else:
                     prompt = prompt + f"{ANSI_NORMAL}{ARROW_HEAD}"
 
@@ -2340,7 +2341,8 @@ async def next_cmd(mc, cmds, json_output=False):
                         if json_output:
                             print(json.dumps(ev.payload, indent=2))
                         else :
-                            classic = interactive_loop.classic or not process_event_message.color
+                            color = process_event_message.color
+                            classic = interactive_loop.classic or not color
                             print("]",end="")
                             for t in ev.payload["path"]:
                                 if classic :
@@ -2348,18 +2350,20 @@ async def next_cmd(mc, cmds, json_output=False):
                                 else:
                                     print(f" {ANSI_INVERT}", end="")
                                 snr = t['snr']
-                                if snr >= 10 :
-                                    print(ANSI_BGREEN, end="")
-                                elif snr <= 0:
-                                    print(ANSI_BRED, end="")
-                                else :
-                                    print(ANSI_BGRAY, end="")
+                                if color:
+                                    if snr >= 10 :
+                                        print(ANSI_BGREEN, end="")
+                                    elif snr <= 0:
+                                        print(ANSI_BRED, end="")
+                                    else :
+                                        print(ANSI_BGRAY, end="")
                                 print(f"{snr:.2f}",end="")
                                 if classic :
                                     print("→",end="")
                                 else :
                                     print(f"{ANSI_NORMAL}{ARROW_HEAD}",end="")
-                                print(ANSI_END, end="")
+                                if color:
+                                    print(ANSI_END, end="")
                                 if "hash" in t:
                                     print(f"[{t['hash']}]",end="")
                                 else:
@@ -3143,6 +3147,7 @@ def usage () :
     -D : debug
     -S : scan for devices and show a selector
     -l : list available ble/serial devices and exit
+    -c <on/off>     : disables most of color output if off
     -T <timeout>    : timeout for the ble scan (-S and -l) default 2s
     -a <address>    : specifies device address (can be a name)
     -d <name>       : filter meshcore devices with name or address
@@ -3210,9 +3215,12 @@ async def main(argv):
         with open(MCCLI_ADDRESS, encoding="utf-8") as f :
             address = f.readline().strip()
 
-    opts, args = getopt.getopt(argv, "a:d:s:ht:p:b:fjDhvSlT:P")
+    opts, args = getopt.getopt(argv, "a:d:s:ht:p:b:fjDhvSlT:Pc:")
     for opt, arg in opts :
         match opt:
+            case "-c" :
+                if arg == "off":
+                    process_event_message.color = False
             case "-d" : # name specified on cmdline
                 address = arg
             case "-a" : # address specified on cmdline
