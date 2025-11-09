@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "meshcore-cli"
-version = "1.2.11"
+version = "1.2.12"
 authors = [
   { name="Florent de Lamotte", email="florent@frizoncorrea.fr" },
 ]
@@ -17,7 +17,7 @@ classifiers = [
 ]
 license = "MIT"
 license-files = ["LICEN[CS]E*"]
-dependencies = [ "meshcore >= 2.1.23", "prompt_toolkit >= 3.0.50", "requests >= 2.28.0", "pycryptodome" ]
+dependencies = [ "meshcore >= 2.1.24", "prompt_toolkit >= 3.0.50", "requests >= 2.28.0", "pycryptodome" ]
 
 [project.urls]
 Homepage = "https://github.com/fdlamotte/meshcore-cli"

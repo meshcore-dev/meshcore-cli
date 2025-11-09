@@ -32,7 +32,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.2.11"
+VERSION = "v1.2.12"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -578,6 +578,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
         "logout" : None,
         "req_status" : None,
         "req_bstatus" : None,
+        "req_neighbours": None,
         "cmd" : None,
         "ver" : None,
         "advert" : None,
@@ -1083,6 +1084,7 @@ async def process_contact_chat_line(mc, contact, line):
             line == "dp" or line == "disc_path" or\
             line == "contact_info" or line == "ci" or\
             line == "req_status" or line == "rs" or\
+            line == "req_neighbours" or line == "rn" or\
             line == "req_bstatus" or line == "rbs" or\
             line == "req_telemetry" or line == "rt" or\
             line == "req_acl" or\
@@ -2634,6 +2636,31 @@ async def next_cmd(mc, cmds, json_output=False):
                                 name = f"{ct['adv_name']:<20} [{e['key']}]"
                             print(f"{name:{' '}<35}: {e['perm']:02x}")
 
+            case "req_neighbours"|"rn" :
+                argnum = 1
+                await mc.ensure_contacts()
+                contact = mc.get_contact_by_name(cmds[1])
+                timeout = 0 if not "timeout" in contact else contact["timeout"]
+                res = await mc.commands.fetch_all_neighbours(contact, timeout=timeout)
+                if res is None :
+                    if json_output :
+                        print(json.dumps({"error" : "Getting data"}))
+                    else:
+                        print("Error getting data")
+                else :
+                    if json_output:
+                        print(json.dumps(res, indent=4))
+                    else:
+                        print(f"Got {res['results_count']} neighbours out of {res['neighbours_count']} from {contact['adv_name']}:")
+                        for n in res['neighbours']:
+                            ct = mc.get_contact_by_key_prefix(n["pubkey"])
+                            if ct :
+                                name = f"[{n['pubkey'][0:8]}] {ct['adv_name']}"
+                            else:
+                                name = f"[{n['pubkey']}]"
+
+                            print(f" {name:30} last viewed {n['secs_ago']} sec ago at {n['snr']} ")
+
             case "req_binary" :
                 argnum = 2
                 await mc.ensure_contacts()
@@ -3131,6 +3158,7 @@ def command_help():
     cmd <name> <cmd>       : sends a command to a repeater (no ack) c  [
     wmt8                   : wait for a msg (reply) with a timeout     ]
     req_status <name>      : requests status from a node            rs
+    req_neighbours <name>  : requests for neighbours in binary form rn
     trace <path>           : run a trace, path is comma separated""")
 
 def usage () :
