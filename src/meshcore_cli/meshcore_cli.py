@@ -2337,12 +2337,11 @@ async def next_cmd(mc, cmds, json_output=False):
                         else :
                             color = process_event_message.color
                             classic = interactive_loop.classic or not color
-                            print("]",end="")
                             for t in ev.payload["path"]:
                                 if classic :
                                     print("→",end="")
                                 else:
-                                    print(f" {ANSI_INVERT}", end="")
+                                    print(f"{ANSI_INVERT}", end="")
                                 snr = t['snr']
                                 if color:
                                     if snr >= 10 :
@@ -2355,13 +2354,13 @@ async def next_cmd(mc, cmds, json_output=False):
                                 if classic :
                                     print("→",end="")
                                 else :
-                                    print(f"{ANSI_NORMAL}{ARROW_HEAD} ",end="")
+                                    print(f"{ANSI_NORMAL}{ARROW_HEAD}",end="")
                                 if color:
                                     print(ANSI_END, end="")
                                 if "hash" in t:
                                     print(f"[{t['hash']}]",end="")
                                 else:
-                                    print("[")
+                                    print()
 
             case "login" | "l" :
                 argnum = 2
