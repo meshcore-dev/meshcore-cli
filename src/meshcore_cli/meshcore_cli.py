@@ -24,7 +24,6 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.shortcuts import radiolist_dialog
 from prompt_toolkit.completion.word_completer import WordCompleter
 from prompt_toolkit.document import Document
-from hashlib import sha256
 from Crypto.Cipher import AES
 from Crypto.Hash import HMAC, SHA256
 
@@ -1444,7 +1443,7 @@ async def set_channel (mc, chan, name, key=None):
         return None
 
     info = res.payload
-    info["channel_hash"] = sha256(info["channel_secret"]).digest()[0:1].hex()
+    info["channel_hash"] = SHA256.new(info["channel_secret"]).hexdigest()[0:2]
     info["channel_secret"] = info["channel_secret"].hex()
 
     if hasattr(mc,'channels') :
@@ -1533,7 +1532,7 @@ async def get_channels (mc, anim=False) :
         if res.type == EventType.ERROR:
             break
         info = res.payload
-        info["channel_hash"] = sha256(info["channel_secret"]).digest()[0:1].hex()
+        info["channel_hash"] = SHA256.new(info["channel_secret"]).hexdigest()[0:2]
         info["channel_secret"] = info["channel_secret"].hex()
         mc.channels.append(info)
         ch = ch + 1
