@@ -2610,15 +2610,30 @@ async def next_cmd(mc, cmds, json_output=False):
                     if json_output:
                         print(json.dumps(res, indent=4))
                     else:
+                        width = os.get_terminal_size().columns
                         print(f"Got {res['results_count']} neighbours out of {res['neighbours_count']} from {contact['adv_name']}:")
                         for n in res['neighbours']:
                             ct = mc.get_contact_by_key_prefix(n["pubkey"])
-                            if ct :
+                            if ct and width > 60 :
                                 name = f"[{n['pubkey'][0:8]}] {ct['adv_name']}"
+                                name = f"{name:30}"
+                            elif ct :
+                                name = f"{ct['adv_name']}"
+                                name = f"{name:20}"
                             else:
                                 name = f"[{n['pubkey']}]"
 
-                            print(f" {name:30} last viewed {n['secs_ago']} sec ago at {n['snr']} ")
+                            t_s = n['secs_ago']
+                            time_ago = f"{t_s}s"
+                            if t_s / 86400 >= 1 : # result in days
+                                time_ago = f"{int(t_s/86400)}d ago{f' ({time_ago})' if width > 62 else ''}"
+                            elif t_s / 3600 >= 1 : # result in days
+                                time_ago = f"{int(t_s/3600)}h ago{f' ({time_ago})' if width > 62 else ''}"
+                            elif t_s / 60 >= 1 : # result in min
+                                time_ago = f"{int(t_s/60)}m ago{f' ({time_ago})' if width > 62 else ''}"
+
+
+                            print(f" {name} {time_ago}, {n['snr']}dB{' SNR' if width > 66 else ''}")
 
             case "req_binary" :
                 argnum = 2
