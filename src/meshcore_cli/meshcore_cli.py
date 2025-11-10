@@ -2340,6 +2340,7 @@ async def next_cmd(mc, cmds, json_output=False):
                         else :
                             color = process_event_message.color
                             classic = interactive_loop.classic or not color
+                            print(" ", end="")
                             for t in ev.payload["path"]:
                                 if classic :
                                     print("→",end="")
