@@ -32,7 +32,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.2.14"
+VERSION = "v1.3.0"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -3252,8 +3252,8 @@ def get_help_for (cmdname, context="line") :
     The scope command can be used from command line or interactive mode to set the region in which flood packets will be transmitted.
 
 Managing Flood Scope in interactive mode
-    Flood scope has recently been introduced in meshcore (from v1.10.0). It limits the scope of packets to regions, using transport codes in the frame.                              
-    When entering chat mode, scope will be reset to *, meaning classic flood.                   
+    Flood scope has recently been introduced in meshcore (from v1.10.0). It limits the scope of packets to regions, using transport codes in the frame.
+    When entering chat mode, scope will be reset to *, meaning classic flood.
     You can switch scope using the scope command, or postfixing the to command with %<scope>.
     Scope can also be applied to a command using % before the scope name. For instance login%#Morbihan will limit diffusion of the login command (which is usually sent flood to get the path to a repeater) to the #Morbihan region.""")
 
