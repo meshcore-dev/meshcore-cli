@@ -3185,7 +3185,7 @@ def get_help_for (cmdname, context="line") :
         at t=2 rp login
 """)
 
-    if cmdname == "node_discover" or cmdname == "nd" :
+    elif cmdname == "node_discover" or cmdname == "nd" :
         print("""node_discover <filter> : discovers 0-hop nodes and displays signal info
 
     filter can be "all" for all types or nodes or a comma separated list consisting of :
