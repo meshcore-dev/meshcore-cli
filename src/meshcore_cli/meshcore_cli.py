@@ -1746,19 +1746,7 @@ async def next_cmd(mc, cmds, json_output=False):
                 match cmds[1]:
                     case "help" :
                         argnum = 1
-                        print("""Available parameters :
-    pin <pin>                   : ble pin
-    radio <freq,bw,sf,cr>       : radio params
-    tuning <rx_dly,af>          : tuning params
-    tx <dbm>                    : tx power
-    name <name>                 : node name
-    lat <lat>                   : latitude
-    lon <lon>                   : longitude
-    coords <lat,lon>            : coordinates
-    print_snr <on/off>          : toggle snr display in messages
-    print_adverts <on/off>      : display adverts as they come
-    print_new_contacts <on/off> : display new pending contacts when available
-    print_path_updates <on/off> : display path updates as they come""")
+                        get_help_for("set")
                     case "max_flood_attempts":
                         msg_ack.max_flood_attempts=int(cmds[2])
                     case "max_attempts":
@@ -1982,21 +1970,7 @@ async def next_cmd(mc, cmds, json_output=False):
                 argnum = 1
                 match cmds[1]:
                     case "help":
-                        print("""Gets parameters from node
-    name               : node name
-    bat                : battery level in mV
-    fstats             : fs statistics
-    coords             : adv coordinates
-    lat                : latitude
-    lon                : longitude
-    radio              : radio parameters
-    tx                 : tx power
-    print_snr          : snr display in messages
-    print_adverts      : display adverts as they come
-    print_new_contacts : display new pending contacts when available
-    print_path_updates : display path updates as they come
-    custom             : all custom variables in json format
-                each custom var can also be get/set directly""")
+                        get_help_for("get")
                     case "max_flood_attempts":
                         if json_output :
                             print(json.dumps({"max_flood_attempts" : msg_ack.max_flood_attempts}))
@@ -3107,8 +3081,8 @@ def command_help():
     reboot                 : reboots node
     sleep <secs>           : sleeps for a given amount of secs      s
     wait_key               : wait until user presses <Enter>        wk
-    apply_to <scope> <cmds>: sends cmds to contacts matching scope  at
-  Messenging
+    apply_to <f> <cmds>    : sends cmds to contacts matching f      at
+  Messaging
     msg <name> <msg>       : send message to node by name           m  {
     wait_ack               : wait an ack                            wa }
     chan <nb> <msg>        : send message to channel number <nb>    ch
@@ -3121,6 +3095,7 @@ def command_help():
     get_channel <n>        : get info for channel (by number or name)
     set_channel n nm k     : set channel info (nb, name, key)
     remove_channel <n>     : remove channel (by number or name)
+    scope <s>              : sets scope for flood messages
   Management
     advert                 : sends advert                           a
     floodadv               : flood advert
@@ -3172,8 +3147,6 @@ def usage () :
     -D : debug
     -S : scan for devices and show a selector
     -l : list available ble/serial devices and exit
-    -C              : toggles classic mode for prompt
-    -c <on/off>     : disables most of color output if off
     -T <timeout>    : timeout for the ble scan (-S and -l) default 2s
     -a <address>    : specifies device address (can be a name)
     -d <name>       : filter meshcore devices with name or address
@@ -3182,14 +3155,16 @@ def usage () :
     -p <port>       : specifies tcp port (default 5000)
     -s <port>       : use serial port <port>
     -b <baudrate>   : specify baudrate
+    -C              : toggles classic mode for prompt
+    -c <on/off>     : disables most of color output if off
 
  Available Commands and shorcuts (can be chained) :""")
     command_help()
 
 def get_help_for (cmdname, context="line") :
     if cmdname == "apply_to" or cmdname == "at" :
-        print("""apply_to <scope> <cmd> : applies cmd to contacts matching scope
-    Scope acts like a filter with comma separated fields :
+        print("""apply_to <f> <cmd> : applies cmd to contacts matching filter <f>
+    Filter is constructed with comma separated fields :
      - u, matches modification time < or > than a timestamp
             (can also be days hours or minutes ago if followed by d,h or m)
      - t, matches the type (1: client, 2: repeater, 3: room, 4: sensor)
@@ -3219,6 +3194,68 @@ def get_help_for (cmdname, context="line") :
 
     nd can be used with no filter parameter ... !!! BEWARE WITH CHAINING !!!
 """)
+
+    elif cmdname == "get" :
+        print("""Gets parameters from node
+  Please see also help for set command, which is more up to date ...
+    name               : node name
+    bat                : battery level in mV
+    fstats             : fs statistics
+    coords             : adv coordinates
+    lat                : latitude
+    lon                : longitude
+    radio              : radio parameters
+    tx                 : tx power
+    print_snr          : snr display in messages
+    print_adverts      : display adverts as they come
+    print_new_contacts : display new pending contacts when available
+    print_path_updates : display path updates as they come
+    custom             : all custom variables in json format
+                each custom var can also be get/set directly""")
+
+    elif cmdname == "set" :
+        print("""Available parameters :
+  device:
+    pin <pin>                   : ble pin
+    radio <freq,bw,sf,cr>       : radio params
+    tuning <rx_dly,af>          : tuning params
+    tx <dbm>                    : tx power
+    name <name>                 : node name
+    lat <lat>                   : latitude
+    lon <lon>                   : longitude
+    coords <lat,lon>            : coordinates
+    auto_update_contacts <>     : automatically updates contact list
+    multi_ack <on/off>          : multi-acks feature
+    telemetry_mode_base <mode>  : set basic telemetry mode all/selected/off
+    telemetry_mode_loc <mode>   : set location telemetry mode all/selected/off
+    telemetry_mode_env <mode>   : set env telemetry mode all/selected/off
+    advert_loc_policy <policy>  : "share" means loc will be shared in adv
+  display:
+    print_snr <on/off>          : toggle snr display in messages
+    print_adverts <on/off>      : display adverts as they come
+    print_new_contacts <on/off> : display new pending contacts when available
+    print_path_updates <on/off> : display path updates as they come
+    json_log_rx <on/off>        : logs packets incoming to device as json
+    channel_echoes <on/off>     : print repeats for channel data
+    echo_unk_channels <on/off>  : also dump unk channels (encrypted)
+    color <on/off>              : color off should remove ANSI codes from output
+  prompt:
+    classic_prompt <on/off>     : activates less fancier prompt
+    arrow_head <string>         : change arrow head in prompt
+    slash_start <string>        : idem for slash start
+    slash_end <string>          : slash end
+    invert_slash <on/off>       : apply color inversion to slash """)
+
+    elif cmdname == "scope":
+        print("""scope <scope> : changes flood scope of the node
+
+    The scope command can be used from command line or interactive mode to set the region in which flood packets will be transmitted.
+
+Managing Flood Scope in interactive mode
+    Flood scope has recently been introduced in meshcore (from v1.10.0). It limits the scope of packets to regions, using transport codes in the frame.                              
+    When entering chat mode, scope will be reset to *, meaning classic flood.                   
+    You can switch scope using the scope command, or postfixing the to command with %<scope>.
+    Scope can also be applied to a command using % before the scope name. For instance login%#Morbihan will limit diffusion of the login command (which is usually sent flood to get the path to a repeater) to the #Morbihan region.""")
 
     else:
         print(f"Sorry, no help yet for {cmdname}")

@@ -40,22 +40,25 @@ Init files can also be defined for a given device, meshcore-cli will look for `&
 
 ### Arguments
 
-Arguments mostly deals with ble connection
+Arguments mostly deals with connection to the node
 
 <pre>
     -h : prints this help
     -v : prints version
     -j : json output (disables init file)
     -D : debug
-    -S : performs a ble scan and ask for device
-    -l : list available ble devices and exit
-    -T &lt;timeout>    : timeout for the ble scan (-S and -l) default 2s
-    -a &lt;address>    : specifies device address (can be a name)
-    -d &lt;name>       : filter meshcore devices with name or address
-    -t &lt;hostname>   : connects via tcp/ip
-    -p &lt;port>       : specifies tcp port (default 5000)
-    -s &lt;port>       : use serial port &lt;port>
-    -b &lt;baudrate>   : specify baudrate
+    -S : scan for devices and show a selector
+    -l : list available ble/serial devices and exit
+    -T &lt;timeout&gt;    : timeout for the ble scan (-S and -l) default 2s
+    -a &lt;address&gt;    : specifies device address (can be a name)
+    -d &lt;name&gt;       : filter meshcore devices with name or address
+    -P              : forces pairing via the OS
+    -t &lt;hostname&gt;   : connects via tcp/ip
+    -p &lt;port&gt;       : specifies tcp port (default 5000)
+    -s &lt;port&gt;       : use serial port &lt;port&gt;
+    -b &lt;baudrate&gt;   : specify baudrate
+    -C              : toggles classic mode for prompt
+    -c &lt;on/off&gt;     : disables most of color output if off
 </pre>
 
 ### Available Commands
@@ -63,60 +66,70 @@ Arguments mostly deals with ble connection
 Commands are given after arguments, they can be chained and some have shortcuts. Also prefixing a command with a dot `.` will force it to output json instead of synthetic result.
 
 <pre>
+    ?&lt;cmd&gt; may give you some more help about cmd
   General commands
     chat                   : enter the chat (interactive) mode
-    chat_to &lt;ct>           : enter chat with contact                to
-    script &lt;filename>      : execute commands in filename
+    chat_to &lt;ct&gt;           : enter chat with contact                to
+    script &lt;filename&gt;      : execute commands in filename
     infos                  : print informations about the node      i
     self_telemetry         : print own telemtry                     t
     card                   : export this node URI                   e
     ver                    : firmware version                       v
     reboot                 : reboots node
-    sleep &lt;secs>           : sleeps for a given amount of secs      s
-    wait_key               : wait until user presses &lt;Enter>        wk
-  Messenging
-    msg &lt;name> &lt;msg>       : send message to node by name           m  {
+    sleep &lt;secs&gt;           : sleeps for a given amount of secs      s
+    wait_key               : wait until user presses &lt;Enter&gt;        wk
+    apply_to &lt;f&gt; &lt;cmds&gt;    : sends cmds to contacts matching f      at
+  Messaging
+    msg &lt;name&gt; &lt;msg&gt;       : send message to node by name           m  {
     wait_ack               : wait an ack                            wa }
-    chan &lt;nb> &lt;msg>        : send message to channel number &lt;nb>    ch
-    public &lt;msg>           : send message to public channel (0)     dch
+    chan &lt;nb&gt; &lt;msg&gt;        : send message to channel number &lt;nb&gt;    ch
+    public &lt;msg&gt;           : send message to public channel (0)     dch
     recv                   : reads next msg                         r
     wait_msg               : wait for a message and read it         wm
     sync_msgs              : gets all unread msgs from the node     sm
     msgs_subscribe         : display msgs as they arrive            ms
-    get_channel &lt;n>        : get info for channel n
+    get_channels           : prints all channel info
+    get_channel &lt;n&gt;        : get info for channel (by number or name)
     set_channel n nm k     : set channel info (nb, name, key)
+    remove_channel &lt;n&gt;     : remove channel (by number or name)
+    scope &lt;s&gt;              : sets node's flood scope
   Management
     advert                 : sends advert                           a
     floodadv               : flood advert
-    get &lt;param>            : gets a param, "get help" for more
-    set &lt;param> &lt;value>    : sets a param, "set help" for more
-    time &lt;epoch>           : sets time to given epoch
+    get &lt;param&gt;            : gets a param, \"get help\" for more
+    set &lt;param&gt; &lt;value&gt;    : sets a param, \"set help\" for more
+    time &lt;epoch&gt;           : sets time to given epoch
     clock                  : get current time
     clock sync             : sync device clock                      st
+    node_discover &lt;filter&gt; : discovers nodes based on their type    nd
   Contacts
     contacts / list        : gets contact list                      lc
-    contact_info &lt;ct>      : prints information for contact ct      ci
-    contact_timeout &lt;ct> v : sets temp default timeout for contact
-    share_contact &lt;ct>     : share a contact with others            sc
-    export_contact &lt;ct>    : get a contact's URI                    ec
-    import_contact &lt;URI>   : import a contact from its URI          ic
-    remove_contact &lt;ct>    : removes a contact from this node
-    path &lt;ct>              : diplays path for a contact
-    reset_path &lt;ct>        : resets path to a contact to flood      rp
-    change_path &lt;ct> &lt;pth> : change the path to a contact           cp
-    change_flags &lt;ct> &lt;f>  : change contact flags (tel_l|tel_a|star)cf
-    req_telemetry &lt;ct>     : prints telemetry data as json          rt
-    req_mma &lt;ct>           : requests min/max/avg for a sensor      rm
-    req_acl &lt;ct>           : requests access control list for sensor
+    reload_contacts        : force reloading all contacts           rc
+    contact_info &lt;ct&gt;      : prints information for contact ct      ci
+    contact_timeout &lt;ct&gt; v : sets temp default timeout for contact
+    share_contact &lt;ct&gt;     : share a contact with others            sc
+    export_contact &lt;ct&gt;    : get a contact's URI                    ec
+    import_contact &lt;URI&gt;   : import a contact from its URI          ic
+    remove_contact &lt;ct&gt;    : removes a contact from this node
+    path &lt;ct&gt;              : diplays path for a contact
+    disc_path &lt;ct&gt;         : discover new path and display          dp
+    reset_path &lt;ct&gt;        : resets path to a contact to flood      rp
+    change_path &lt;ct&gt; &lt;pth&gt; : change the path to a contact           cp
+    change_flags &lt;ct&gt; &lt;f&gt;  : change contact flags (tel_l|tel_a|star)cf
+    req_telemetry &lt;ct&gt;     : prints telemetry data as json          rt
+    req_mma &lt;ct&gt;           : requests min/max/avg for a sensor      rm
+    req_acl &lt;ct&gt;           : requests access control list for sensor
     pending_contacts       : show pending contacts
-    add_pending &lt;key>      : manually add pending contact from key
-    flush_pending          : flush pending contact clist
+    add_pending &lt;pending&gt;  : manually add pending contact
+    flush_pending          : flush pending contact list
   Repeaters
-    login &lt;name> &lt;pwd>     : log into a node (rep) with given pwd   l
-    logout &lt;name>          : log out of a repeater
-    cmd &lt;name> &lt;cmd>       : sends a command to a repeater (no ack) c  [
+    login &lt;name&gt; &lt;pwd&gt;     : log into a node (rep) with given pwd   l
+    logout &lt;name&gt;          : log out of a repeater
+    cmd &lt;name&gt; &lt;cmd&gt;       : sends a command to a repeater (no ack) c  [
     wmt8                   : wait for a msg (reply) with a timeout     ]
-    req_status &lt;name>      : requests status from a node            rs
+    req_status &lt;name&gt;      : requests status from a node            rs
+    req_neighbours &lt;name&gt;  : requests for neighbours in binary form rn
+    trace &lt;path&gt;           : run a trace, path is comma separated
 </pre>
 
 ### Interactive Mode
@@ -137,6 +150,43 @@ The `to` command is specific to chat mode, it lets you enter the recipient for n
 When you are connected to a node, the behaviour will depend on the node type, if you're on a chat node, it will send messages by default and you can chat. On a repeater or a room server, it will send commands (autocompletioin has been set to comply with the CommonCli class of meshcore). To send a message through a room you'll have to prefix the message with a quote or use the send command.
 
 You can alse set a channel as recipient, `to public` will switch to the public channel, and `to ch1` to channel 1.
+
+#### Flood Scope in interactive mode
+
+Flood scope has recently been introduced in meshcore (from `v1.10.0`). It limits the scope of packets to regions, using transport codes in the frame.
+
+When entering chat mode, scope will be reset to `*`, meaning classic flood.
+
+You can switch scope using the `scope` command, or postfixing the `to` command with `%<scope>`.
+
+Scope can also be applied to a command using `%` before the scope name. For instance `login%#Morbihan` will limit diffusion of the login command (which is usually sent flood to get the path to a repeater) to the `#Morbihan` region.
+
+### Issuing batch commands to contacts with apply to
+
+`apply_to <f> <cmd>` : applies cmd to contacts matching filter `<f>` it can be used to apply the same command to a pool of repeaters, or remove some contacts matching a condition.
+
+Filter is constructed with comma separated fields :
+ 
+- `u`, matches modification time `<` or `>` than a timestamp (can also be days hours or minutes ago if followed by `d`,`h` or `m`)
+- `t`, matches the type (1: client, 2: repeater, 3: room, 4: sensor)
+- `h`, matches number of hops
+- `d`, direct, similar to `h>-1`
+- `f`, flood, similar to `h<0` or `h=-1`
+
+Commands should be written as if in interactive mode, if writing from the commandline don't forget to use commas to clearly delimit fields.
+                    
+Note: Some commands like `contact_name` (aka `cn`), `reset_path` (aka `rp`), `forget_password` (aka `fp`) can be chained. There is also a `sleep` command taking an optional time parameter. The sleep will be issued after the command, it helps limiting rate through repeaters ...
+                   
+#### Examples
+
+```
+  # removes all clients that have not been updated in last 2 days
+  at u<2d,t=1 remove_contact
+  # gives traces to repeaters that have been updated in the last 24h and are direct
+  at t=2,u>1d,d cn trace
+  # tries to do flood login to all repeaters
+  at t=2 rp login
+```
 
 ## Examples
 
