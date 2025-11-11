@@ -151,7 +151,7 @@ When you are in a node, the behaviour will depend on the node type, if you're on
 
 The `/` character is used to bypass the node you have currently selected using `to`:
 - `/<cmd>` issues cmd command on the root
-- `/<node>/<cmd>` will send cmd to selected node
+- `/<node>/<cmd>` will send cmd to selected node
 - `/<dest> <msg>` will send msg to dest (channel or node)
 
 #### Flood Scope in interactive mode
