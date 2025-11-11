@@ -205,27 +205,72 @@ process_event_message.last_node=None
 
 async def handle_log_rx(event):
     mc = handle_log_rx.mc
-    if handle_log_rx.json_log_rx: # json mode ... raw dump
-        msg = json.dumps(event.payload)
-        if handle_message.above:
-            print_above(msg)
-        else :
-            print(msg)
-        return
 
     pkt = bytes().fromhex(event.payload["payload"])
     pbuf = io.BytesIO(pkt)
     header = pbuf.read(1)[0]
+    route_type = header & 0x03
+    payload_type = (header & 0x3c) >> 2
+    payload_ver = (header & 0xc0) >> 6
 
-    if header & ~1 == 0x14: # flood msg / channel
+    transport_code = None
+    if route_type == 0x00 or route_type == 0x03: # has transport code
+        transport_code = pbuf.read(4)    # discard transport code
+
+    path_len = pbuf.read(1)[0]
+    path = pbuf.read(path_len).hex() # Beware of traces where pathes are mixed
+
+    pkt_payload = pbuf.read()
+
+    event.payload["header"] = header
+    event.payload["route_type"] = route_type
+    event.payload["payload_type"] = payload_type
+
+    match payload_type:
+        case 0x0:
+            typename = "REQ"
+        case 0x01:
+            typename = "RESPONSE"
+        case 0x02:
+            typename = "TXT_MSG"
+        case 0x03:
+            typename = "ACK"
+        case 0x04:
+            typename = "ADVERT"
+        case 0x05:
+            typename = "GRP_TXT"
+        case 0x06:
+            typename = "GRP_DATA"
+        case 0x07:
+            typename = "ANON_REQ"
+        case 0x08:
+            typename = "PATH"
+        case 0x09:
+            typename = "TRACE"
+        case 0x0A:
+            typename = "MULTIPART"
+        case 0x0B:
+            typename = "CONTROL"
+
+    if typename :
+        event.payload["payload_typename"]= typename
+
+    event.payload["payload_ver"] = payload_ver
+
+    if not transport_code is None:
+        event.payload["transport_code"] = transport_code.hex()
+
+    event.payload["path_len"] = path_len 
+    event.payload["path"] = path
+
+    event.payload["pkt_payload"] = pkt_payload.hex()
+
+    if payload_type == 0x05: # flood msg / channel
         if handle_log_rx.channel_echoes:
-            if header & 1 == 0: # has transport code
-                pbuf.read(4)    # discard transport code
-            path_len = pbuf.read(1)[0]
-            path = pbuf.read(path_len).hex()
-            chan_hash = pbuf.read(1).hex()
-            cipher_mac = pbuf.read(2)
-            msg = pbuf.read() # until the end of buffer
+            pk_buf = io.BytesIO(pkt_payload)
+            chan_hash = pk_buf.read(1).hex()
+            cipher_mac = pk_buf.read(2)
+            msg = pk_buf.read() # until the end of buffer
 
             channel = None
             for c in await get_channels(mc):
@@ -257,6 +302,14 @@ async def handle_log_rx(event):
                     print_above(txt)
                 else:
                     print(txt)
+
+    if handle_log_rx.json_log_rx: # json mode ... raw dump
+        msg = json.dumps(event.payload)
+        if handle_message.above:
+            print_above(msg)
+        else :
+            print(msg)
+
 
 handle_log_rx.json_log_rx = False
 handle_log_rx.channel_echoes = False
