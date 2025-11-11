@@ -1071,6 +1071,29 @@ async def process_contact_chat_line(mc, contact, line):
             print("")
         return True
 
+    if line.startswith("sleep") or line.startswith("s"):
+        try:
+            sleeptime = int(line.split(" ",2)[1])
+            cmd_pos = 2
+        except IndexError: # nothing arg after sleep
+            sleeptime = 1
+            cmd_pos = 0
+        except ValueError:
+            sleeptime = 1
+            cmd_pos = 1
+
+        try:
+            if cmd_pos > 0:
+                secline = line.split(" ",cmd_pos)[cmd_pos]
+                await process_contact_chat_line(mc, contact, secline)
+        except IndexError:
+            pass
+
+        # will sleep after executed command if there is a command
+        await asyncio.sleep(sleeptime)
+
+        return True
+
     if line == "contact_lastmod":
         timestamp = contact["lastmod"]
         print(f"{contact['adv_name']} updated"
@@ -3174,7 +3197,7 @@ def get_help_for (cmdname, context="line") :
      - d, direct, similar to h>-1
      - f, flood, similar to h<0 or h=-1
 
-    Note: Some commands like contact_name (aka cn), reset_path (aka rp), forget_password (aka fp) can be chained.
+    Note: Some commands like contact_name (aka cn), reset_path (aka rp), forget_password (aka fp) can be chained. There is also a sleep command taking an optional event. The sleep will be issued after the command, it helps limiting rate through repeaters ...
 
     Examples:
         # removes all clients that have not been updated in last 2 days
