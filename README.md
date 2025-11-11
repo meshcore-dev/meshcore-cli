@@ -142,14 +142,17 @@ You'll get a prompt with the name of your node. From here you can type meshcore-
 
 The `to` command is specific to chat mode, it lets you enter the recipient for next command. By default you're on your node but you can enter other nodes or public rooms. Here are some examples :
 
-- `to <nodename>` : will enter nodename
+- `to <dest>` : will enter dest (node or channel)
 - `to /`, `to ~` : will go to the root (your node)
 - `to ..` : will go to the last node (it will switch between the two last nodes, this is just a 1-depth history)
 - `to !` : will switch to the node you received last message from
 
-When you are connected to a node, the behaviour will depend on the node type, if you're on a chat node, it will send messages by default and you can chat. On a repeater or a room server, it will send commands (autocompletioin has been set to comply with the CommonCli class of meshcore). To send a message through a room you'll have to prefix the message with a quote or use the send command.
+When you are in a node, the behaviour will depend on the node type, if you're on a chat node, it will send messages by default and you can chat. On a repeater or a room server, it will send commands (autocompletion has been set to comply with the CommonCli class of meshcore). To send a message through a room you'll have to prefix the message with a quote or use the send command.
 
-You can alse set a channel as recipient, `to public` will switch to the public channel, and `to ch1` to channel 1.
+The `/` character is used to bypass the node you have currently selected using `to`:
+- `/<cmd>` issues cmd command on the root
+- `/<node>/<cmd>` will send cmd to selected node
+- `/<dest> <msg>` will send msg to dest (channel or node)
 
 #### Flood Scope in interactive mode
 
@@ -160,6 +163,14 @@ When entering chat mode, scope will be reset to `*`, meaning classic flood.
 You can switch scope using the `scope` command, or postfixing the `to` command with `%<scope>`.
 
 Scope can also be applied to a command using `%` before the scope name. For instance `login%#Morbihan` will limit diffusion of the login command (which is usually sent flood to get the path to a repeater) to the `#Morbihan` region.
+
+#### Channel echoes
+
+It's sometimes interesting to know the path taken by a message received from a channel or which repeaters have repeated a sent message.
+
+The app give you the information by listening `rx_log` from the device, when obtained the information is attached to the message and can be read.
+
+In meshcore-cli I went lower-level by implementing channel echoes. When activated (with `/set channel_echoes on`), all the channel messages will be printed on the terminal along with the SNR and path taken. When sending a message, you'll have all the repeats from 0-hop repeaters as echoes, and when a message is received, you should see information about the received message, but also all the instances of the same message that might have reached you from another path.
 
 ### Issuing batch commands to contacts with apply to
 
