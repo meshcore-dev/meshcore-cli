@@ -172,6 +172,14 @@ The app give you the information by listening `rx_log` from the device, when obt
 
 In meshcore-cli I went lower-level by implementing channel echoes. When activated (with `/set channel_echoes on`), all the channel messages will be printed on the terminal along with the SNR and path taken. When sending a message, you'll have all the repeats from 0-hop repeaters as echoes, and when a message is received, you should see information about the received message, but also all the instances of the same message that might have reached you from another path.
 
+In the example below, a msg has been sent between two repeaters, 21 and 25. 25 repeated the message and 21 the repeat and both echoes came back to the node with different SNRs.
+
+```
+f1down/#fdl|*> 8
+#fdl f1down: 8                                                 [25] -4.75-112
+#fdl f1down: 8                                               [2521]  1.00-109
+```
+
 ### Issuing batch commands to contacts with apply to
 
 `apply_to <f> <cmd>` : applies cmd to contacts matching filter `<f>` it can be used to apply the same command to a pool of repeaters, or remove some contacts matching a condition.
