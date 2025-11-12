@@ -203,6 +203,9 @@ process_event_message.print_snr=False
 process_event_message.color=True
 process_event_message.last_node=None
 
+PAYLOAD_TYPENAMES = ["REQ", "RESPONSE", "TEXT_MSG", "ACK", "ADVERT", "GRP_TXT", "GRP_DATA", "ANON_REQ", "PATH", "TRACE", "MULTIPART", "CONTROL"]
+ROUTE_TYPENAMES = ["TC_FLOOD", "FLOOD", "DIRECT", "TC_DIRECT"]
+
 async def handle_log_rx(event):
     mc = handle_log_rx.mc
 
@@ -220,40 +223,25 @@ async def handle_log_rx(event):
     path_len = pbuf.read(1)[0]
     path = pbuf.read(path_len).hex() # Beware of traces where pathes are mixed
 
+    try :
+        route_typename = ROUTE_TYPENAMES[route_type]
+    except IndexError:
+        logger.debug(f"Unknown route type {route_type}") 
+        route_typename = "UNK"
+
+    try :
+        payload_typename = PAYLOAD_TYPENAMES[payload_type]
+    except IndexError:
+        logger.debug(f"Unknown payload type {payload_type}")
+        payload_typename = "UNK"
+
     pkt_payload = pbuf.read()
 
     event.payload["header"] = header
     event.payload["route_type"] = route_type
+    event.payload["route_typename"] = route_typename
     event.payload["payload_type"] = payload_type
-
-    match payload_type:
-        case 0x0:
-            typename = "REQ"
-        case 0x01:
-            typename = "RESPONSE"
-        case 0x02:
-            typename = "TXT_MSG"
-        case 0x03:
-            typename = "ACK"
-        case 0x04:
-            typename = "ADVERT"
-        case 0x05:
-            typename = "GRP_TXT"
-        case 0x06:
-            typename = "GRP_DATA"
-        case 0x07:
-            typename = "ANON_REQ"
-        case 0x08:
-            typename = "PATH"
-        case 0x09:
-            typename = "TRACE"
-        case 0x0A:
-            typename = "MULTIPART"
-        case 0x0B:
-            typename = "CONTROL"
-
-    if typename :
-        event.payload["payload_typename"]= typename
+    event.payload["payload_typename"]= payload_typename
 
     event.payload["payload_ver"] = payload_ver
 
