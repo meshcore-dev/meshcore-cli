@@ -32,13 +32,17 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.3.0"
+VERSION = "v1.3.1"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
 MCCLI_ADDRESS = MCCLI_CONFIG_DIR + "default_address"
 MCCLI_HISTORY_FILE = MCCLI_CONFIG_DIR + "history"
 MCCLI_INIT_SCRIPT = MCCLI_CONFIG_DIR + "init"
+
+PAYLOAD_TYPENAMES = ["REQ", "RESPONSE", "TEXT_MSG", "ACK", "ADVERT", "GRP_TXT", "GRP_DATA", "ANON_REQ", "PATH", "TRACE", "MULTIPART", "CONTROL"]
+ROUTE_TYPENAMES = ["TC_FLOOD", "FLOOD", "DIRECT", "TC_DIRECT"]
+CONTACT_TYPENAMES = ["NONE","CLI","REP","ROOM","SENS"]
 
 # Fallback address if config file not found
 # if None or "" then a scan is performed
@@ -202,9 +206,6 @@ async def process_event_message(mc, ev, json_output, end="\n", above=False):
 process_event_message.print_snr=False
 process_event_message.color=True
 process_event_message.last_node=None
-
-PAYLOAD_TYPENAMES = ["REQ", "RESPONSE", "TEXT_MSG", "ACK", "ADVERT", "GRP_TXT", "GRP_DATA", "ANON_REQ", "PATH", "TRACE", "MULTIPART", "CONTROL"]
-ROUTE_TYPENAMES = ["TC_FLOOD", "FLOOD", "DIRECT", "TC_DIRECT"]
 
 async def handle_log_rx(event):
     mc = handle_log_rx.mc
@@ -431,7 +432,7 @@ class MyNestedCompleter(NestedCompleter):
                 opts = self.options.keys()
             completer = WordCompleter(
                 opts, ignore_case=self.ignore_case,
-                pattern=re.compile(r"([a-zA-Z0-9_\\/\#]+|[^a-zA-Z0-9_\s\#]+)"))
+                pattern=re.compile(r"([a-zA-Z0-9_\\/\#\?]+|[^a-zA-Z0-9_\s\#\?]+)"))
             yield from completer.get_completions(document, complete_event)
         else: # normal behavior for remainder
             yield from super().get_completions(document, complete_event)
@@ -582,11 +583,21 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "flood_after":None,
             "custom":None,
         },
+        "?get":None,
+        "?set":None,
+        "?scope":None,
+        "?contact_info":None,
+        "?apply_to":None,
+        "?at":None,
+        "?node_discover":None,
+        "?nd":None,
     }
 
     contact_completion_list = {
         "contact_info": None,
         "contact_name": None,
+        "contact_key": None,
+        "contact_type": None,
         "contact_lastmod": None,
         "export_contact" : None,
         "share_contact" : None,
@@ -749,7 +760,7 @@ make_completion_dict.custom_vars = {}
 async def interactive_loop(mc, to=None) :
     print("""Interactive mode, most commands from terminal chat should work.
 Use \"to\" to select recipient, use Tab to complete name ...
-Line starting with \"$\" or \".\" will issue a meshcli command.
+Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
 \"quit\", \"q\", CTRL+D will end interactive mode""")
 
     contact = to
@@ -1102,8 +1113,43 @@ async def process_contact_chat_line(mc, contact, line):
         await process_cmds(mc, args)
         return True
 
+    if line.startswith("contact_key") or line.startswith("ck"):
+        print(contact['public_key'],end="")
+        if " " in line:
+            print(" ", end="", flush=True)
+            secline = line.split(" ", 1)[1]
+            await process_contact_chat_line(mc, contact, secline)
+        else:
+            print("")
+        return True
+
+    if line.startswith("contact_type") or line.startswith("ct"):
+        print(f"{CONTACT_TYPENAMES[contact['type']]:4}",end="")
+        if " " in line:
+            print(" ", end="", flush=True)
+            secline = line.split(" ", 1)[1]
+            await process_contact_chat_line(mc, contact, secline)
+        else:
+            print("")
+        return True
+
     if line.startswith("contact_name") or line.startswith("cn"):
         print(contact['adv_name'],end="")
+        if " " in line:
+            print(" ", end="", flush=True)
+            secline = line.split(" ", 1)[1]
+            await process_contact_chat_line(mc, contact, secline)
+        else:
+            print("")
+        return True
+
+    if line.startswith("path") :
+        if contact['out_path_len'] == -1:
+            print("Flood", end="")
+        elif contact['out_path_len'] == 0:
+            print("0 hop", end="")
+        else:
+            print(contact['out_path'],end="")
         if " " in line:
             print(" ", end="", flush=True)
             secline = line.split(" ", 1)[1]
@@ -1143,20 +1189,24 @@ async def process_contact_chat_line(mc, contact, line):
         return True
 
     # commands that take contact as second arg will be sent to recipient
-    if line == "sc" or line == "share_contact" or\
-            line == "ec" or line == "export_contact" or\
-            line == "uc" or line == "upload_contact" or\
-            line == "rp" or line == "reset_path" or\
-            line == "dp" or line == "disc_path" or\
-            line == "contact_info" or line == "ci" or\
-            line == "req_status" or line == "rs" or\
-            line == "req_neighbours" or line == "rn" or\
-            line == "req_telemetry" or line == "rt" or\
-            line == "req_acl" or\
-            line == "path" or\
-            line == "logout" :
-        args = [line, contact['adv_name']]
+    # and can be chained ...
+    if line.startswith("sc") or line.startswith("share_contact") or\
+            line.startswith("ec") or line.startswith("export_contact") or\
+            line.startswith("uc") or line.startswith("upload_contact") or\
+            line.startswith("rp") or line.startswith("reset_path") or\
+            line.startswith("dp") or line.startswith("disc_path") or\
+            line.startswith("contact_info") or line.startswith("ci") or\
+            line.startswith("req_status") or line.startswith("rs") or\
+            line.startswith("req_neighbours") or line.startswith("rn") or\
+            line.startswith("req_telemetry") or line.startswith("rt") or\
+            line.startswith("req_acl") or\
+            line.startswith("path") or\
+            line.startswith("logout") :
+        args = [line.split()[0], contact['adv_name']]
         await process_cmds(mc, args)
+        if " " in line:
+            secline = line.split(" ", 1)[1]
+            await process_contact_chat_line(mc, contact, secline)
         return True
 
     # special case for rp that can be chained from cmdline
@@ -1306,12 +1356,13 @@ async def process_contact_chat_line(mc, contact, line):
 
     return False
 
-async def apply_command_to_contacts(mc, contact_filter, line):
+async def apply_command_to_contacts(mc, contact_filter, line, json_output=False):
     upd_before = None
     upd_after = None
     contact_type = None
     min_hops = None
     max_hops = None
+    count = 0
 
     await mc.ensure_contacts()
 
@@ -1366,6 +1417,9 @@ async def apply_command_to_contacts(mc, contact_filter, line):
                 (upd_after is None or contact["lastmod"] > upd_after) and\
                 (min_hops is None or contact["out_path_len"] >= min_hops) and\
                 (max_hops is None or contact["out_path_len"] <= max_hops):
+
+            count = count + 1
+
             if await process_contact_chat_line(mc, contact, line):
                 pass
 
@@ -1389,6 +1443,9 @@ async def apply_command_to_contacts(mc, contact_filter, line):
 
             else:
                 logger.error(f"Can't send {line} to {contact['adv_name']}")
+
+    if not json_output:
+        print(f"> {count} matches in contacts")
 
 async def send_cmd (mc, contact, cmd) :
     res = await mc.commands.send_cmd(contact, cmd)
@@ -1780,7 +1837,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "apply_to"|"at":
                 argnum = 2
-                await apply_command_to_contacts(mc, cmds[1], cmds[2])
+                await apply_command_to_contacts(mc, cmds[1], cmds[2], json_output=json_output)
 
             case "set":
                 argnum = 2
@@ -2532,18 +2589,14 @@ async def next_cmd(mc, cmds, json_output=False):
                         await mc.ensure_contacts()
                         print(f"Discovered {len(dn)} nodes:")
                         for n in dn:
-                            name = f"{n['pubkey'][0:2]} {mc.get_contact_by_key_prefix(n['pubkey'])['adv_name']}"
-                            if name is None:
+                            try :
+                                name = f"{n['pubkey'][0:2]} {mc.get_contact_by_key_prefix(n['pubkey'])['adv_name']}"
+                            except TypeError:
                                 name = n["pubkey"][0:16]
-                            type = f"t:{n['node_type']}"
-                            if n['node_type'] == 1:
-                                type = "CLI"
-                            elif n['node_type'] == 2:
-                                type = "REP"
-                            elif n['node_type'] == 3:
-                                type = "ROOM"
-                            elif n['node_type'] == 4:
-                                type = "SENS"
+                            if n['node_type'] >= len(CONTACT_TYPENAMES):
+                                type = f"t:{n['node_type']}"
+                            else:
+                                type = CONTACT_TYPENAMES[n['node_type']]
 
                             print(f" {name:16} {type:>4} SNR: {n['SNR_in']:6,.2f}->{n['SNR']:6,.2f} RSSI: ->{n['RSSI']:4}")
 
@@ -2561,7 +2614,7 @@ async def next_cmd(mc, cmds, json_output=False):
                 else :
                     print(json.dumps({
                         "name": contact["adv_name"],
-                        "pubkey_pre": contact["public_key"][0:12],
+                        "pubkey_pre": contact["public_key"][0:16],
                         "lpp": res,
                     }, indent = 4))
 
@@ -2695,7 +2748,13 @@ async def next_cmd(mc, cmds, json_output=False):
                     print(json.dumps(res, indent=4))
                 else :
                     for c in res.items():
-                        print(c[1]["adv_name"])
+                        if c[1]['out_path_len'] == -1:
+                            path_str = "Flood"
+                        elif c[1]['out_path_len'] == 0:
+                            path_str = "0 hop"
+                        else:
+                            path_str = f"{c[1]['out_path']}"
+                        print(f"{c[1]['adv_name']:30} {CONTACT_TYPENAMES[c[1]['type']]:4}  {c[1]['public_key'][:12]}  {path_str}")
                     print(f"> {len(mc.contacts)} contacts in device")
 
             case "reload_contacts" | "rc":
@@ -2763,7 +2822,7 @@ async def next_cmd(mc, cmds, json_output=False):
                         if (path_len == 0) :
                             print("0 hop")
                         elif (path_len == -1) :
-                            print("Path not set")
+                            print("Flood")
                         else:
                             print(path)
 
@@ -2790,6 +2849,8 @@ async def next_cmd(mc, cmds, json_output=False):
                         print(f"Unknown contact {cmds[1]}")
                 else:
                     path = cmds[2].replace(",","") # we'll accept path with ,
+                    if path == "0":
+                        path = ""
                     try:
                         res = await mc.commands.change_contact_path(contact, path)
                         logger.debug(res)
@@ -3213,7 +3274,7 @@ def get_help_for (cmdname, context="line") :
      - d, direct, similar to h>-1
      - f, flood, similar to h<0 or h=-1
 
-    Note: Some commands like contact_name (aka cn), reset_path (aka rp), forget_password (aka fp) can be chained. There is also a sleep command taking an optional event. The sleep will be issued after the command, it helps limiting rate through repeaters ...
+    Note: Some commands like contact_name (aka cn), contact_key (aka ck), contact_type (aka ct), reset_path (aka rp), forget_password (aka fp) can be chained. There is also a sleep command taking an optional event. The sleep will be issued after the command, it helps limiting rate through repeaters ...
 
     Examples:
         # removes all clients that have not been updated in last 2 days
@@ -3252,7 +3313,8 @@ def get_help_for (cmdname, context="line") :
     print_new_contacts : display new pending contacts when available
     print_path_updates : display path updates as they come
     custom             : all custom variables in json format
-                each custom var can also be get/set directly""")
+                each custom var can also be get/set directly
+""")
 
     elif cmdname == "set" :
         print("""Available parameters :
@@ -3285,7 +3347,8 @@ def get_help_for (cmdname, context="line") :
     arrow_head <string>         : change arrow head in prompt
     slash_start <string>        : idem for slash start
     slash_end <string>          : slash end
-    invert_slash <on/off>       : apply color inversion to slash """)
+    invert_slash <on/off>       : apply color inversion to slash
+""")
 
     elif cmdname == "scope":
         print("""scope <scope> : changes flood scope of the node
@@ -3296,7 +3359,17 @@ Managing Flood Scope in interactive mode
     Flood scope has recently been introduced in meshcore (from v1.10.0). It limits the scope of packets to regions, using transport codes in the frame.
     When entering chat mode, scope will be reset to *, meaning classic flood.
     You can switch scope using the scope command, or postfixing the to command with %<scope>.
-    Scope can also be applied to a command using % before the scope name. For instance login%#Morbihan will limit diffusion of the login command (which is usually sent flood to get the path to a repeater) to the #Morbihan region.""")
+    Scope can also be applied to a command using % before the scope name. For instance login%#Morbihan will limit diffusion of the login command (which is usually sent flood to get the path to a repeater) to the #Morbihan region.
+""")
+
+    elif cmdname == "contact_info":
+        print("""contact_info <ct> : displays contact info
+
+    in interactive mode, there are some lighter commands that can be chained to give more compact information
+        - contact_name (cn)
+        - contact_key (ck)
+        - contact_type (ct)
+""")
 
     else:
         print(f"Sorry, no help yet for {cmdname}")
