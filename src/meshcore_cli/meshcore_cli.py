@@ -285,7 +285,7 @@ async def handle_log_rx(event):
             if chan_name != "" :
                 width = os.get_terminal_size().columns
                 cars = width - 13 - 2 * path_len - len(chan_name) - 1
-                dispmsg = message[0:cars]
+                dispmsg = message.replace("\n","")[0:cars]
                 txt = f"{ANSI_LIGHT_GRAY}{chan_name} {ANSI_DGREEN}{dispmsg+(cars-len(dispmsg))*' '} {ANSI_YELLOW}[{path}]{ANSI_LIGHT_GRAY}{event.payload['snr']:6,.2f}{event.payload['rssi']:4}{ANSI_END}"
                 if handle_message.above:
                     print_above(txt)
