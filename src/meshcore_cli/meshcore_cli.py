@@ -1158,7 +1158,7 @@ async def process_contact_chat_line(mc, contact, line):
             print("")
         return True
 
-    if line.startswith("sleep") or line.startswith("s"):
+    if line.startswith("sleep ") or line.startswith("s "):
         try:
             sleeptime = int(line.split(" ",2)[1])
             cmd_pos = 2
@@ -1219,6 +1219,8 @@ async def process_contact_chat_line(mc, contact, line):
 
     if line.startswith("set timeout "):
         cmds=line.split(" ")
+        #args = ["contact_timeout", contact['adv_name'], cmds[2]]
+        #await process_cmds(mc, args)
         contact["timeout"] = float(cmds[2])
         return True
 
