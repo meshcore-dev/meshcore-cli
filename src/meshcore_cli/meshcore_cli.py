@@ -32,7 +32,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.3.1"
+VERSION = "v1.3.2"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -591,6 +591,9 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
         "?at":None,
         "?node_discover":None,
         "?nd":None,
+        "?pending_contacts":None,
+        "?add_pending":None,
+        "?flush_pending":None,
     }
 
     contact_completion_list = {
@@ -3329,12 +3332,15 @@ def get_help_for (cmdname, context="line") :
     lat <lat>                   : latitude
     lon <lon>                   : longitude
     coords <lat,lon>            : coordinates
-    auto_update_contacts <>     : automatically updates contact list
     multi_ack <on/off>          : multi-acks feature
     telemetry_mode_base <mode>  : set basic telemetry mode all/selected/off
     telemetry_mode_loc <mode>   : set location telemetry mode all/selected/off
     telemetry_mode_env <mode>   : set env telemetry mode all/selected/off
     advert_loc_policy <policy>  : "share" means loc will be shared in adv
+    manual_add_contacts <on/off>: let user manually add contacts to device
+      - when off device automatically adds contacts from adverts
+      - when on contacts must be added manually using add_pending 
+        (pending contacts list is built by meshcli from adverts while connected) 
   display:
     print_snr <on/off>          : toggle snr display in messages
     print_adverts <on/off>      : display adverts as they come
@@ -3344,12 +3350,13 @@ def get_help_for (cmdname, context="line") :
     channel_echoes <on/off>     : print repeats for channel data
     echo_unk_channels <on/off>  : also dump unk channels (encrypted)
     color <on/off>              : color off should remove ANSI codes from output
-  prompt:
+  meshcore-cli behaviour:
     classic_prompt <on/off>     : activates less fancier prompt
     arrow_head <string>         : change arrow head in prompt
     slash_start <string>        : idem for slash start
     slash_end <string>          : slash end
     invert_slash <on/off>       : apply color inversion to slash
+    auto_update_contacts <on/of>: auto sync contact list with device
 """)
 
     elif cmdname == "scope":
@@ -3371,6 +3378,20 @@ Managing Flood Scope in interactive mode
         - contact_name (cn)
         - contact_key (ck)
         - contact_type (ct)
+""")
+
+    elif cmdname == "pending_contacts" or cmdname == "flush_pending" or cmdname == "add_pending":
+        print("""Contact management
+
+To receive a message from another user, it is necessary to have its public key. This key is stored on a contact list in the device, and this list has a finite size (50 when meshcore started, now over 350 for most devices).
+
+By default contacts are automatically added to the device contact list when an advertisement is received, so as soon as you receive an advert, you can talk with your buddy.
+
+With growing number of users, it becomes necessary to manage contact list and one of the ways is to add contacts manually to the device. This is done by turning on manual_add_contacts. Once this option has been turned on, a pending list is built by meshcore-cli from the received adverts. You can view the list issuing a pending_contacts command, flush the list using flush_pending or add a contact from the list with add_pending followed by the key of the contact or its name (both will be auto-completed with tab).
+
+This feature only really works in interactive mode.
+
+Note: There is also an auto_update_contacts setting that has nothing to do with adding contacts, it permits to automatically sync contact lists between device and meshcore-cli (when there is an update in name, location or path).
 """)
 
     else:

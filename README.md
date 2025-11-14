@@ -180,6 +180,18 @@ f1down/#fdl|*> 8
 #fdl f1down: 8                                               [2521]  1.00-109
 ```
 
+### Contact management
+
+To receive a message from another user, it is necessary to have its public key. This key is stored on a contact list in the device, and this list has a finite size (50 when meshcore started, now over 350 for most devices).
+
+By default contacts are automatically added to the device contact list when an advertisement is received, so as soon as you receive an advert, you can talk with your buddy.
+
+With growing number of users, it becomes necessary to manage contact list and one of the ways is to add contacts manually to the device. This is done by turning on `manual_add_contacts`. Once this option has been turned on, a pending list is built by meshcore-cli from the received adverts. You can view the list issuing a `pending_contacts` command, flush the list using `flush_pending` or add a contact from the list with `add_pending` followed by the key of the contact or its name (both will be auto-completed with tab).
+
+This feature only really works in interactive mode.
+
+Note: There is also an `auto_update_contacts` setting that has nothing to do with adding contacts, it permits to automatically sync contact lists between device and meshcore-cli (when there is an update in name, location or path).
+
 ### Issuing batch commands to contacts with apply to
 
 `apply_to <f> <cmd>` : applies cmd to contacts matching filter `<f>` it can be used to apply the same command to a pool of repeaters, or remove some contacts matching a condition.
