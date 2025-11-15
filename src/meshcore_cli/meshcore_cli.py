@@ -766,6 +766,7 @@ Use \"to\" to select recipient, use Tab to complete name ...
 Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
 \"quit\", \"q\", CTRL+D will end interactive mode""")
 
+
     contact = to
     prev_contact = None
 
@@ -774,16 +775,16 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
 
     await get_contacts(mc, anim=True)
     await get_channels(mc, anim=True)
+
+    # Call sync_msg before going further so there is no issue when scrolling
+    # long list of msgs
+    await next_cmd(mc, ["sync_msgs"])
+
     await subscribe_to_msgs(mc, above=True)
 
     handle_new_contact.print_new_contacts = True
 
     try:
-        while True: # purge msgs
-            res = await mc.commands.get_msg()
-            if res.type == EventType.NO_MORE_MSGS:
-                break
-
         if os.path.isdir(MCCLI_CONFIG_DIR) :
             our_history = FileHistory(MCCLI_HISTORY_FILE)
         else:
