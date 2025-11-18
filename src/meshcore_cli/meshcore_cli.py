@@ -1494,7 +1494,8 @@ async def send_msg (mc, contact, msg) :
     return res
 
 async def msg_ack (mc, contact, msg) :
-    timeout = 0 if not 'timeout' in contact else contact['timeout']
+    timeout = 0 if not isinstance(contact, dict) or not 'timeout' in contact\
+        else contact['timeout']
     res = await mc.commands.send_msg_with_retry(contact, msg,
                 max_attempts=msg_ack.max_attempts,
                 flood_after=msg_ack.flood_after,
@@ -2334,7 +2335,7 @@ async def next_cmd(mc, cmds, json_output=False):
                 argnum = 2
                 dest = None
 
-                if len(cmds[1]) == 12: # possibly an hex prefix
+                if len(cmds[1]) >= 12: # possibly an hex prefix
                     try:
                         dest = bytes.fromhex(cmds[1])
                     except ValueError:
