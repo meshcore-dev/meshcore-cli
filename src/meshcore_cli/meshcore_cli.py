@@ -3246,11 +3246,16 @@ def command_help():
 def usage () :
     """ Prints some help """
     version()
+    command_usage()
+    print(" Available Commands and shorcuts (can be chained) :""")
+    command_help()
+
+def command_usage() :
     print("""
    Usage : meshcore-cli <args> <commands>
 
  Arguments :
-    -h : prints this help
+    -h : prints help for arguments and commands
     -v : prints version
     -j : json output (disables init file)
     -D : debug
@@ -3266,9 +3271,7 @@ def usage () :
     -b <baudrate>   : specify baudrate
     -C              : toggles classic mode for prompt
     -c <on/off>     : disables most of color output if off
-
- Available Commands and shorcuts (can be chained) :""")
-    command_help()
+""")
 
 def get_help_for (cmdname, context="line") :
     if cmdname == "apply_to" or cmdname == "at" :
@@ -3411,13 +3414,19 @@ async def main(argv):
     baudrate = 115200
     timeout = 2
     pin = None
+    first_device = False
     # If there is an address in config file, use it by default
     # unless an arg is explicitely given
     if os.path.exists(MCCLI_ADDRESS) :
         with open(MCCLI_ADDRESS, encoding="utf-8") as f :
             address = f.readline().strip()
 
-    opts, args = getopt.getopt(argv, "a:d:s:ht:p:b:fjDhvSlT:Pc:C")
+    try:
+        opts, args = getopt.getopt(argv, "a:d:s:ht:p:b:fjDhvSlT:Pc:C")
+    except getopt.GetoptError:
+        print("Unrecognized option, use -h to get more help")
+        command_usage()
+        return
     for opt, arg in opts :
         match opt:
             case "-c" :
@@ -3454,6 +3463,7 @@ async def main(argv):
                 return
             case "-f": # connect to first encountered device
                 address = ""
+                first_device = True
             case "-l" :
                 print("BLE devices:")
                 try :
@@ -3549,8 +3559,15 @@ async def main(argv):
 
         try :
             mc = await MeshCore.create_ble(address=address, device=device, client=client, debug=debug, only_error=json_output, pin=pin)
+        except BleakError :
+            print("BLE connection asked (default behaviour), but no BLE HW found")
+            print("Call meshcore-cli with -h for some more help (on commands)")
+            command_usage()
+            return            
         except ConnectionError :
             logger.info("Error while connecting, retrying once ...")
+            if first_device :
+                address = "" # reset address to change device if first_device was asked
             if device is None and client is None: # Search for device
                 logger.info(f"Scanning BLE for device matching {address}")
                 devices = await BleakScanner.discover(timeout=timeout)
