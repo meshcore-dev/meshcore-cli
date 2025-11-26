@@ -3537,7 +3537,14 @@ async def main(argv):
                 logger.info(f"Searching first MC BLE device")
             else:
                 logger.info(f"Scanning BLE for device matching {address}")
-            devices = await BleakScanner.discover(timeout=timeout)
+            try:
+                devices = await BleakScanner.discover(timeout=timeout)
+            except (BleakError, BleakDBusError):
+                print("BLE connection asked (default behaviour), but no BLE HW found")
+                print("Call meshcore-cli with -h for some more help (on commands)")
+                command_usage()
+                return            
+
             found = False
             for d in devices:
                 if not d.name is None and d.name.startswith("MeshCore-") and\
