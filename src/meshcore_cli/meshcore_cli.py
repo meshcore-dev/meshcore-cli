@@ -10,7 +10,7 @@ import getopt, json, shlex, re
 import logging
 import requests
 from bleak import BleakScanner, BleakClient
-from bleak.exc import BleakError
+from bleak.exc import BleakError, BleakDBusError
 import serial.tools.list_ports
 from pathlib import Path
 import traceback
@@ -32,7 +32,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.3.6"
+VERSION = "v1.3.7"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -3473,7 +3473,7 @@ async def main(argv):
                     for d in devices :
                         if not d.name is None and d.name.startswith("MeshCore-"):
                             print(f" {d.address}  {d.name}")
-                except BleakError:
+                except (BleakError, BleakDBusError):
                     print(" No BLE HW")
                 print("\nSerial ports:")
                 ports = serial.tools.list_ports.comports()
@@ -3488,7 +3488,7 @@ async def main(argv):
                     for d in devices:
                         if not d.name is None and d.name.startswith("MeshCore-"):
                             choices.append(({"type":"ble","device":d}, f"{d.address:<22} {d.name}"))
-                except BleakError:
+                except (BleakError, BleakDBusError):
                     logger.info("No BLE Device")
 
                 ports = serial.tools.list_ports.comports()
@@ -3559,7 +3559,7 @@ async def main(argv):
 
         try :
             mc = await MeshCore.create_ble(address=address, device=device, client=client, debug=debug, only_error=json_output, pin=pin)
-        except BleakError :
+        except (BleakError, BleakDBusError):
             print("BLE connection asked (default behaviour), but no BLE HW found")
             print("Call meshcore-cli with -h for some more help (on commands)")
             command_usage()
