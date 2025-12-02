@@ -292,6 +292,45 @@ async def handle_log_rx(event):
                 else:
                     print(txt)
 
+    elif payload_type == 0x04: # Advert
+        if handle_log_rx.advert_echoes:
+            pk_buf = io.BytesIO(pkt_payload)
+            adv_key = pk_buf.read(32).hex()
+            adv_timestamp = int.from_bytes(pk_buf.read(4), "little", signed=False)
+            signature = pk_buf.read(64).hex()
+            flags = pk_buf.read(1)[0]
+            adv_type = flags & 0x0F
+            adv_lat = None
+            adv_lon = None
+            if flags & 0x10 > 0: #has location
+                adv_lat = int.from_bytes(pk_buf.read(4), "little", signed=True)/1000000.0
+                adv_lon = int.from_bytes(pk_buf.read(4), "little", signed=True)/1000000.0
+            if flags & 0x20 > 0: #has feature1
+                adv_feat1 = pk_buf.read(2).hex()
+            if flags & 0x40 > 0: #has feature2
+                adv_feat2 = pk_buf.read(2).hex()
+            if flags & 0x80 > 0: #has name
+                adv_name = pk_buf.read().decode("utf-8").strip("\x00")
+
+            if adv_name is None: 
+                # try to get the name from the contact 
+                ct = handle_log_rx.mc.get_contact_by_key_prefix(adv_key)
+                if ct is None:
+                    adv_name = adv_key[0:12]
+                else:
+                    adv_name = ct["adv_name"]
+
+            txt = f"{ANSI_LIGHT_GRAY}Advert for{ANSI_END} {adv_name} {ANSI_GREEN}{CONTACT_TYPENAMES[adv_type]}{ANSI_END}"
+            if not adv_lat is None:
+                txt += f" {ANSI_LIGHT_GRAY}coords: {adv_lat},{adv_lon}"
+            txt += f" {ANSI_YELLOW}path: [{path}] {ANSI_LIGHT_GRAY}snr: {event.payload['snr']:.2f}dB{ANSI_END}"
+
+            if handle_message.above:
+                print_above(txt)
+            else:
+                print(txt)
+
+
     if handle_log_rx.json_log_rx: # json mode ... raw dump
         msg = json.dumps(event.payload)
         if handle_message.above:
@@ -302,6 +341,7 @@ async def handle_log_rx(event):
 
 handle_log_rx.json_log_rx = False
 handle_log_rx.channel_echoes = False
+handle_log_rx.advert_echoes = False
 handle_log_rx.mc = None
 handle_log_rx.echo_unk_chans=False
 
@@ -538,6 +578,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "print_adverts" : {"on":None, "off":None},
             "json_log_rx" : {"on":None, "off":None},
             "channel_echoes" : {"on":None, "off":None},
+            "advert_echoes" : {"on":None, "off":None},
             "echo_unk_chans" : {"on":None, "off":None},
             "print_new_contacts" : {"on": None, "off":None},
             "print_path_updates" : {"on":None,"off":None},
@@ -567,6 +608,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "print_adverts":None,
             "json_log_rx":None,
             "channel_echoes":None,
+            "advert_echoes":None,
             "echo_unk_chans":None,
             "print_path_updates":None,
             "print_new_contacts":None,
@@ -1886,6 +1928,10 @@ async def next_cmd(mc, cmds, json_output=False):
                         handle_log_rx.channel_echoes = (cmds[2] == "on")
                         if json_output :
                             print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
+                    case "advert_echoes" :
+                        handle_log_rx.advert_echoes = (cmds[2] == "on")
+                        if json_output :
+                            print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
                     case "echo_unk_chans" :
                         handle_log_rx.echo_unk_chans = (cmds[2] == "on")
                         if json_output :
@@ -2111,6 +2157,11 @@ async def next_cmd(mc, cmds, json_output=False):
                             print(json.dumps({"channel_echoes" : handle_log_rx.channel_echoes}))
                         else:
                             print(f"{'on' if handle_log_rx.channel_echoes else 'off'}")
+                    case "advert_echoes":
+                        if json_output :
+                            print(json.dumps({"advert_echoes" : handle_log_rx.channel_echoes}))
+                        else:
+                            print(f"{'on' if handle_log_rx.advert_echoes else 'off'}")
                     case "echo_unk_chans":
                         if json_output :
                             print(json.dumps({"echo_unk_chans" : handle_log_rx.echo_unk_chans}))
@@ -3353,6 +3404,7 @@ def get_help_for (cmdname, context="line") :
     print_path_updates <on/off> : display path updates as they come
     json_log_rx <on/off>        : logs packets incoming to device as json
     channel_echoes <on/off>     : print repeats for channel data
+    advert_echoes <on/off>      : print repeats for adverts
     echo_unk_channels <on/off>  : also dump unk channels (encrypted)
     color <on/off>              : color off should remove ANSI codes from output
   meshcore-cli behaviour:
