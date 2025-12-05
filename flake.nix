@@ -4,9 +4,11 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
-  outputs = inputs:
+  outputs =
+    inputs:
     inputs.flake-utils.lib.eachDefaultSystem (
-      system: let
+      system:
+      let
         pkgs = inputs.nixpkgs.legacyPackages.${system};
 
         lib = pkgs.lib;
@@ -15,15 +17,15 @@
 
         meshcore = python3Packages.buildPythonPackage rec {
           pname = "meshcore";
-          version = "2.2.1";
+          version = "2.2.2";
           pyproject = true;
 
           src = python3Packages.fetchPypi {
             inherit pname version;
-            sha256 = "sha256-HpCbGG+ZQdVWIeE3mJFFQ7w5W+JjcNb+Tb53i9uT5CA=";
+            sha256 = "sha256-vn/vF4avMDwDLL0EMVrrMWkZrZ1GTiUxGyTBOtKvG1I=";
           };
 
-          build-system = [python3Packages.hatchling];
+          build-system = [ python3Packages.hatchling ];
 
           dependencies = [
             python3Packages.bleak
@@ -31,12 +33,13 @@
             python3Packages.pyserial-asyncio
           ];
 
-          pythonImportsCheck = ["meshcore"];
+          pythonImportsCheck = [ "meshcore" ];
         };
 
         pyproject = lib.importTOML ./pyproject.toml;
         version = pyproject.project.version;
-      in {
+      in
+      {
         packages.meshcore-cli = python3Packages.buildPythonPackage {
           pname = "meshcore-cli";
           inherit version;
@@ -57,7 +60,7 @@
             python3Packages.prompt_toolkit
             python3Packages.pyserial
             python3Packages.requests
-			python3Packages.pycryptodome
+            python3Packages.pycryptodome
           ];
 
           doCheck = false;
