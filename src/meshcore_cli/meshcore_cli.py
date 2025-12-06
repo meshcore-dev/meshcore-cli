@@ -32,7 +32,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.3.8"
+VERSION = "v1.3.9"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -136,9 +136,9 @@ async def process_event_message(mc, ev, json_output, end="\n", above=False):
             ts = data["sender_timestamp"]
             if process_event_message.timestamp == "on":
                 if (abs(time.time()-ts) < 86400):
-                    fmt = "%H:%S"
+                    fmt = "%H:%M"
                 else:
-                    fmt = "%y-%m-%d %H:%S"
+                    fmt = "%y-%m-%d %H:%M"
             else:
                 fmt = process_event_message.timestamp
             path_str += f'{datetime.datetime.fromtimestamp(ts).strftime(fmt)},'
@@ -339,9 +339,9 @@ async def handle_log_rx(event):
                 ts = adv_timestamp
                 if process_event_message.timestamp == "on":
                     if (abs(time.time()-ts) < 86400):
-                        fmt = "%H:%S"
+                        fmt = "%H:%M"
                     else:
-                        fmt = "%y-%m-%d %H:%S"
+                        fmt = "%y-%m-%d %H:%M"
                 else:
                     fmt = process_event_message.timestamp
                 ts_str = f' at {datetime.datetime.fromtimestamp(ts).strftime(fmt)}'
