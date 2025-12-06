@@ -1604,8 +1604,11 @@ async def set_scope (mc, scope) :
         return scope
 
     res = await mc.commands.set_flood_scope(scope)
-    if res is None or res.type == EventType.ERROR:
-        if not res is None and res.payload["error_code"] == 1: #unsupported
+    if res is None :
+        return None
+
+    if res.type == EventType.ERROR:
+        if "error_code" in res.payload and res.payload["error_code"] == 1: #unsupported
             set_scope.has_scope = False
         return None
 
