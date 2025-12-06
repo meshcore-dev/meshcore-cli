@@ -558,6 +558,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
         "self_telemetry" : None,
         "get_channel": None,
         "set_channel": None,
+        "add_channel": None,
         "get_channels": None,
         "remove_channel": None,
         "apply_to": None,
@@ -636,6 +637,12 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
         "?pending_contacts":None,
         "?add_pending":None,
         "?flush_pending":None,
+        "?get_channels":None,
+        "?set_channel":None,
+        "?get_channel":None,
+        "?set_channel":None,
+        "?add_channel":None,
+        "?remove_channel":None,
     }
 
     contact_completion_list = {
@@ -1598,13 +1605,18 @@ async def get_channel (mc, chan) :
 
 async def set_channel (mc, chan, name, key=None):
 
-    if chan.isnumeric():
-        nb = int(chan)
+    if isinstance(chan, str):
+        if chan.isnumeric():
+            nb = int(chan)
+        else:
+            c = await get_channel_by_name(mc, chan)
+            if c is None:
+                return None
+            nb = c['channel_idx']
+    elif isinstance(chan, int):
+        nb = chan
     else:
-        c = await get_channel_by_name(mc, chan)
-        if c is None:
-            return None
-        nb = c['channel_idx']
+        return None
 
     res = await mc.commands.set_channel(nb, name, key)
 
@@ -2364,17 +2376,29 @@ async def next_cmd(mc, cmds, json_output=False):
                 if res is None:
                     print("Error setting channel")
 
-            case "scope":
-                argnum = 1
-                res = await set_scope(mc, cmds[1])
+            case "add_channel":
+                argnum = 2
+                if cmds[1].startswith("#") or len(cmds) == 2:
+                    argnum = 1
+                    res = await set_channel(mc, "", cmds[1])
+                elif len(cmds[2]) != 32:
+                    res = None
+                else:
+                    res = await set_channel(mc, "", cmds[1], bytes.fromhex(cmds[3]))
                 if res is None:
-                    print(f"Error while setting scope")
+                    print("Error adding channel")
 
             case "remove_channel":
                 argnum = 1
                 res = await set_channel(mc, cmds[1], "", bytes.fromhex(16*"00"))
                 if res is None:
                     print("Error deleting channel")
+
+            case "scope":
+                argnum = 1
+                res = await set_scope(mc, cmds[1])
+                if res is None:
+                    print(f"Error while setting scope")
 
             case "reboot" :
                 res = await mc.commands.reboot()
@@ -3253,7 +3277,8 @@ def command_help():
     msgs_subscribe         : display msgs as they arrive            ms
     get_channels           : prints all channel info
     get_channel <n>        : get info for channel (by number or name)
-    set_channel n nm k     : set channel info (nb, name, key)
+    set_channel n nm [k]   : set channel info (nb, name, key)
+    add_channel name [key] : add new channel with optional key
     remove_channel <n>     : remove channel (by number or name)
     scope <s>              : sets scope for flood messages
   Management
@@ -3449,6 +3474,30 @@ With growing number of users, it becomes necessary to manage contact list and on
 This feature only really works in interactive mode.
 
 Note: There is also an auto_update_contacts setting that has nothing to do with adding contacts, it permits to automatically sync contact lists between device and meshcore-cli (when there is an update in name, location or path).
+""")
+
+    elif "channel" in cmdname:
+        print("""Channel management
+
+Channels are used to send messages to a group of people. This group of people share a common key, used to encrypt, identify and decrypt the messages that are sent flood over the network (possibly with a scope).
+
+    Channel commands are the following:
+        - get_channels
+        - get_channel chan
+        - add_channel name [key]
+        - set_channel chan name [key]
+        - remove_channel chan
+
+There is a fixed number of slots on companions to store channel messages, each channel has a number, a name and a key, the get_channels command lists theses slots.
+
+You can also call get_channel (with number or name) to get information about one channel.
+
+Adding a channel can be done using the set_channel command, taking as parameters the channel number, the name and the key. Key is optional, if not provided, it will be computed from the name.
+ The add_channel command won't take a number as it will use first available slot.
+
+There is a special case for auto channels, which starts with a #, these have always their key computed from the name (note that mccli does not lowercase and strip characters so you should be carefull when sharing when users of the android app or ripple).
+
+To remove a channel, use remove_channel, either with channel name or number.
 """)
 
     else:
