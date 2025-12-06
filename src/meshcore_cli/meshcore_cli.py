@@ -130,10 +130,23 @@ async def process_event_message(mc, ev, json_output, end="\n", above=False):
         await mc.ensure_contacts()
         data = ev.payload
 
+        path_str = ""
+
+        if process_event_message.timestamp != "" and process_event_message.timestamp != "off":
+            ts = data["sender_timestamp"]
+            if process_event_message.timestamp == "on":
+                if (abs(time.time()-ts) < 86400):
+                    fmt = "%H:%S"
+                else:
+                    fmt = "%y-%m-%d %H:%S"
+            else:
+                fmt = process_event_message.timestamp
+            path_str += f'{datetime.datetime.fromtimestamp(ts).strftime(fmt)},'
+
         if data['path_len'] == 255 :
-            path_str = "D"
+            path_str += "D"
         else :
-            path_str = f"{data['path_len']}"
+            path_str += f"{data['path_len']}"
         if "SNR" in data and process_event_message.print_snr:
             path_str = path_str + f",{data['SNR']}dB"
 
@@ -206,6 +219,7 @@ async def process_event_message(mc, ev, json_output, end="\n", above=False):
 process_event_message.print_snr=False
 process_event_message.color=True
 process_event_message.last_node=None
+process_event_message.timestamp=""
 
 async def handle_log_rx(event):
     mc = handle_log_rx.mc
@@ -320,7 +334,19 @@ async def handle_log_rx(event):
                 else:
                     adv_name = ct["adv_name"]
 
-            txt = f"{ANSI_LIGHT_GRAY}Advert for{ANSI_END} {adv_name} {ANSI_GREEN}{CONTACT_TYPENAMES[adv_type]}{ANSI_END}"
+            ts_string = ""
+            if process_event_message.timestamp != "" and process_event_message.timestamp != "off":
+                ts = adv_timestamp
+                if process_event_message.timestamp == "on":
+                    if (abs(time.time()-ts) < 86400):
+                        fmt = "%H:%S"
+                    else:
+                        fmt = "%y-%m-%d %H:%S"
+                else:
+                    fmt = process_event_message.timestamp
+                ts_str = f' at {datetime.datetime.fromtimestamp(ts).strftime(fmt)}'
+
+            txt = f"{ANSI_LIGHT_GRAY}Advert for{ANSI_END} {adv_name}{ANSI_GREEN}/{CONTACT_TYPENAMES[adv_type]}{ts_str}{ANSI_END}"
             if not adv_lat is None:
                 txt += f" {ANSI_LIGHT_GRAY}coords: {adv_lat},{adv_lon}"
             txt += f" {ANSI_YELLOW}path: [{path}] {ANSI_LIGHT_GRAY}snr: {event.payload['snr']:.2f}dB{ANSI_END}"
@@ -574,6 +600,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "lon" : None,
             "coords" : None,
             "print_snr" : {"on":None, "off": None},
+            "print_timestamp" : {"on":None, "off": None, "%Y:%M":None},
             "json_msgs" : {"on":None, "off": None},
             "color" : {"on":None, "off":None},
             "print_adverts" : {"on":None, "off":None},
@@ -604,6 +631,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "lat":None,
             "lon":None,
             "print_snr":None,
+            "print_timestamp":None,
             "json_msgs":None,
             "color":None,
             "print_adverts":None,
@@ -1928,6 +1956,10 @@ async def next_cmd(mc, cmds, json_output=False):
                         process_event_message.color = (cmds[2] == "on")
                         if json_output :
                             print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
+                    case "print_timestamp" :
+                        process_event_message.timestamp = cmds[2]
+                        if json_output :
+                            print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
                     case "print_snr" :
                         process_event_message.print_snr = (cmds[2] == "on")
                         if json_output :
@@ -2159,6 +2191,11 @@ async def next_cmd(mc, cmds, json_output=False):
                             print(json.dumps({"color" : process_event_message.color}))
                         else:
                             print(f"{'on' if process_event_message.color else 'off'}")
+                    case "print_timestamp":
+                        if json_output :
+                            print(json.dumps({"timestamp" : process_event_message.timestamp}))
+                        else:
+                            print(f"{process_event_message.timestamp}")
                     case "json_log_rx":
                         if json_output :
                             print(json.dumps({"json_log_rx" : handle_log_rx.json_log_rx}))
@@ -3423,6 +3460,7 @@ def get_help_for (cmdname, context="line") :
       - when on contacts must be added manually using add_pending 
         (pending contacts list is built by meshcli from adverts while connected) 
   display:
+    print_timestamp <on/off/fmt>: toggle printing of timestamp, can be strftime format
     print_snr <on/off>          : toggle snr display in messages
     print_adverts <on/off>      : display adverts as they come
     print_new_contacts <on/off> : display new pending contacts when available
