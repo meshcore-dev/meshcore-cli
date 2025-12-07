@@ -631,6 +631,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "coords":None,
             "lat":None,
             "lon":None,
+            "private_key":None,
             "print_snr":None,
             "print_timestamp":None,
             "json_msgs":None,
@@ -2287,6 +2288,16 @@ async def next_cmd(mc, cmds, json_output=False):
                             print(json.dumps(res.payload, indent=4))
                         else:
                             print(f"Battery level : {res.payload['level']}")
+                    case "private_key":
+                        res = await mc.commands.export_private_key()
+                        logger.debug(res)
+                        if res.type == EventType.ERROR:
+                            print(f"Error exporting private key {res}")
+                        elif json_output :
+                            res.payload["private_key"] = res.payload["private_key"].hex()
+                            print(json.dumps(res.payload))
+                        else:
+                            print(f"Private key: {res.payload['private_key'].hex()}")
                     case "fstats" :
                         res = await mc.commands.get_bat()
                         logger.debug(res)
@@ -3433,6 +3444,7 @@ def get_help_for (cmdname, context="line") :
     lon                : longitude
     radio              : radio parameters
     tx                 : tx power
+    private_key        : private key of the node
     print_snr          : snr display in messages
     print_adverts      : display adverts as they come
     print_new_contacts : display new pending contacts when available
