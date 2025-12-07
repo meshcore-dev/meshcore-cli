@@ -32,7 +32,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.3.9"
+VERSION = "v1.3.10"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -600,6 +600,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "lat" : None,
             "lon" : None,
             "coords" : None,
+            "private_key": None,
             "print_snr" : {"on":None, "off": None},
             "print_timestamp" : {"on":None, "off": None, "%Y:%M":None},
             "json_msgs" : {"on":None, "off": None},
@@ -2076,6 +2077,16 @@ async def next_cmd(mc, cmds, json_output=False):
                             print(json.dumps(res.payload, indent=4))
                         else:
                             print("ok")
+                    case "private_key":
+                        params=bytes.fromhex(cmds[2])
+                        res = await mc.commands.import_private_key(params)
+                        logger.debug(res)
+                        if res.type == EventType.ERROR:
+                            print(f"Error: {res}")
+                        elif json_output :
+                            print(json.dumps(res.payload, indent=4))
+                        else:
+                            print("ok")
                     case "tuning":
                         params=cmds[2].commands.split(",")
                         res = await mc.commands.set_tuning(
@@ -3463,6 +3474,7 @@ def get_help_for (cmdname, context="line") :
     name <name>                 : node name
     lat <lat>                   : latitude
     lon <lon>                   : longitude
+    private_key                 : private key 
     coords <lat,lon>            : coordinates
     multi_ack <on/off>          : multi-acks feature
     telemetry_mode_base <mode>  : set basic telemetry mode all/selected/off
