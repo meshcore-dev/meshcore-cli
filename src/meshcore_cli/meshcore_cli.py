@@ -539,6 +539,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
 
     completion_list = {
         "to" : to_list,
+        "/to" : to_list,
         "public" : None,
         "chan" : None,
     }
@@ -859,8 +860,6 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
 
     await subscribe_to_msgs(mc, above=True)
 
-    handle_new_contact.print_new_contacts = True
-
     try:
         if os.path.isdir(MCCLI_CONFIG_DIR) :
             our_history = FileHistory(MCCLI_HISTORY_FILE)
@@ -1000,6 +999,9 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                     except IndexError:
                         print(scope)
 
+            elif line == "quit" or line == "q" or line == "/quit" or line == "/q" :
+                break
+
             elif contact is None and (line.startswith("apply_to ") or line.startswith("at ")) or\
                  line.startswith("/apply_to ") or line.startswith("/at ") :
                 try:
@@ -1007,52 +1009,8 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                 except IndexError:
                     logger.error(f"Error with apply_to command parameters")
 
-            elif line.startswith("/") :
-                path = line.split(" ", 1)[0]
-                if path.count("/") == 1:
-                    args = line[1:].split(" ")
-                    dest = args[0]
-                    dest_scope = None
-                    if "%" in dest :
-                        dest_scope = dest.split("%")[-1]
-                        dest = dest[:-len(dest_scope)-1]
-                        await set_scope (mc, dest_scope)
-                    tct = mc.get_contact_by_name(dest)
-                    if len(args)>1 and not tct is None: # a contact, send a message
-                        if tct["type"] == 1 or tct["type"] == 3: # client or room
-                            last_ack = await msg_ack(mc, tct, line.split(" ", 1)[1])
-                        else:
-                            print("Can only send msg to chan, client or room")
-                    else :
-                        ch = await get_channel_by_name(mc, dest)
-                        if len(args)>1 and not ch is None: # a channel, send message
-                            await send_chan_msg(mc, ch["channel_idx"], line.split(" ", 1)[1])
-                        else :
-                            try :
-                                await process_cmds(mc, shlex.split(line[1:]))
-                            except ValueError:
-                                logger.error(f"Error processing line{line[1:]}")
-                else:
-                    cmdline = line[1:].split("/",1)[1]
-                    contact_name = path[1:].split("/",1)[0]
-                    dest_scope = None
-                    if "%" in contact_name:
-                        dest_scope = contact_name.split("%")[-1]
-                        contact_name = contact_name[:-len(dest_scope)-1]
-                        await set_scope (mc, dest_scope)
-                    tct = mc.get_contact_by_name(contact_name)
-                    if tct is None:
-                        print(f"{contact_name} is not a contact")
-                    else:
-                        if not await process_contact_chat_line(mc, tct, cmdline):
-                            if cmdline != "":
-                                if tct["type"] == 1:
-                                    last_ack = await msg_ack(mc, tct, cmdline)
-                                else :
-                                    await process_cmds(mc, ["cmd", tct["adv_name"], cmdline])
-
-            elif line.startswith("to ") : # dest
-                dest = line[3:]
+            elif line.startswith("to ") or line.startswith("/to "): # dest
+                dest = line.split(" ", 1)[1]
                 if dest.startswith("\"") or dest.startswith("\'") : # if name starts with a quote
                     dest = shlex.split(dest)[0] # use shlex.split to get contact name between quotes
                 dest_scope = None
@@ -1098,14 +1056,55 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                     if not dest_scope is None:
                         scope = await set_scope(mc, dest_scope)
 
-            elif line == "to" :
+            elif line == "to" or line == "/to" :
                 if contact is None :
                     print(mc.self_info['name'])
                 else:
                     print(contact["adv_name"])
 
-            elif line == "quit" or line == "q" :
-                break
+            elif line.startswith("/") :
+                path = line.split(" ", 1)[0]
+                if path.count("/") == 1:
+                    args = line[1:].split(" ")
+                    dest = args[0]
+                    dest_scope = None
+                    if "%" in dest :
+                        dest_scope = dest.split("%")[-1]
+                        dest = dest[:-len(dest_scope)-1]
+                        await set_scope (mc, dest_scope)
+                    tct = mc.get_contact_by_name(dest)
+                    if len(args)>1 and not tct is None: # a contact, send a message
+                        if tct["type"] == 1 or tct["type"] == 3: # client or room
+                            last_ack = await msg_ack(mc, tct, line.split(" ", 1)[1])
+                        else:
+                            print("Can only send msg to chan, client or room")
+                    else :
+                        ch = await get_channel_by_name(mc, dest)
+                        if len(args)>1 and not ch is None: # a channel, send message
+                            await send_chan_msg(mc, ch["channel_idx"], line.split(" ", 1)[1])
+                        else :
+                            try :
+                                await process_cmds(mc, shlex.split(line[1:]))
+                            except ValueError:
+                                logger.error(f"Error processing line{line[1:]}")
+                else:
+                    cmdline = line[1:].split("/",1)[1]
+                    contact_name = path[1:].split("/",1)[0]
+                    dest_scope = None
+                    if "%" in contact_name:
+                        dest_scope = contact_name.split("%")[-1]
+                        contact_name = contact_name[:-len(dest_scope)-1]
+                        await set_scope (mc, dest_scope)
+                    tct = mc.get_contact_by_name(contact_name)
+                    if tct is None:
+                        print(f"{contact_name} is not a contact")
+                    else:
+                        if not await process_contact_chat_line(mc, tct, cmdline):
+                            if cmdline != "":
+                                if tct["type"] == 1:
+                                    last_ack = await msg_ack(mc, tct, cmdline)
+                                else :
+                                    await process_cmds(mc, ["cmd", tct["adv_name"], cmdline])
 
             # commands that take one parameter (don't need quotes)
             elif line.startswith("public ") :
