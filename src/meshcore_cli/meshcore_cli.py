@@ -32,7 +32,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.3.10"
+VERSION = "v1.3.11"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -334,7 +334,7 @@ async def handle_log_rx(event):
                 else:
                     adv_name = ct["adv_name"]
 
-            ts_string = ""
+            ts_str = ""
             if process_event_message.timestamp != "" and process_event_message.timestamp != "off":
                 ts = adv_timestamp
                 if process_event_message.timestamp == "on":
