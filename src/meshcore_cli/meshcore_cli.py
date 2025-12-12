@@ -294,7 +294,7 @@ async def handle_log_rx(event):
                 chan_name = channel["channel_name"]
                 aes_key = bytes.fromhex(channel["channel_secret"])
                 cipher = AES.new(aes_key, AES.MODE_ECB)
-                message = cipher.decrypt(msg)[5:].decode("utf-8").strip("\x00")
+                message = cipher.decrypt(msg)[5:].decode("utf-8", "ignore").strip("\x00")
 
             if chan_name != "" :
                 width = os.get_terminal_size().columns
@@ -324,7 +324,7 @@ async def handle_log_rx(event):
             if flags & 0x40 > 0: #has feature2
                 adv_feat2 = pk_buf.read(2).hex()
             if flags & 0x80 > 0: #has name
-                adv_name = pk_buf.read().decode("utf-8").strip("\x00")
+                adv_name = pk_buf.read().decode("utf-8", "ignore").strip("\x00")
 
             if adv_name is None: 
                 # try to get the name from the contact 
