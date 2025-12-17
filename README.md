@@ -2,6 +2,18 @@
 
 meshcore-cli : CLI interface to MeschCore companion app over BLE, TCP or Serial
 
+## About
+
+meshcore-cli is a tool that connects to your companion radio node (meshcore client) over BLE, TCP or Serial and lets you interact with it from a terminal using a command line interface.
+
+You can send commands as parameters to the meshcore-cli command (from your shell) either interactively or through a script.
+
+There is also an interactive mode (this is the default when no command is passed). In interactive mode you can enter a contact (another client a repeater, a sensor or a room) and interact with it. For clients, interaction consists in sending/receiving messages. For repeaters, rooms or sensors it will directly give you the remote cli (you can still send messages to rooms using double quote prefix or msg command).
+
+Note that meshcore-cli only interacts with companion radios (through BLE, Serial or TCP), you can't connect to a repeater using its serial interface.
+
+Also, most meshcore companions only have one interface compiled in at a time. So you can't connect via Serial to a node, which has been compiled as a BLE companion.
+
 ## Install
 
 Meshcore-cli depends on the [python meshcore](https://github.com/fdlamotte/meshcore_py) package. You can install both via `pip` or `pipx` using the command:
