@@ -72,6 +72,8 @@ ANSI_LIGHT_GREEN = "\033[0;92m"
 ANSI_LIGHT_YELLOW = "\033[0;93m"
 ANSI_LIGHT_GRAY="\033[0;38;5;247m"
 ANSI_BGRAY="\033[1;38;5;247m"
+ANSI_GRAY_BACK="\033[48;5;247m"
+ANSI_RESET_BACK="\033[49m"
 ANSI_ORANGE="\033[0;38;5;214m"
 ANSI_BORANGE="\033[1;38;5;214m"
 #ANSI_YELLOW="\033[0;38;5;226m"
@@ -82,8 +84,9 @@ ANSI_BYELLOW = "\033[1;33m"
 #Unicode chars
 # some possible symbols for prompts 🭬🬛🬗🭬🬛🬃🬗🭬🬛🬃🬗🬏🭀🭋🭨🮋
 ARROW_HEAD = ""
-SLASH_END = ""
-SLASH_START = ""
+SLASH_END = f"{ANSI_RESET_BACK}"
+#SLASH_START = ""
+SLASH_START = f"{ANSI_GRAY_BACK}"
 INVERT_SLASH = False
 
 def escape_ansi(line):
