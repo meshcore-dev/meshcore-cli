@@ -3497,7 +3497,7 @@ def get_help_for (cmdname, context="line") :
     json_log_rx <on/off>        : logs packets incoming to device as json
     channel_echoes <on/off>     : print repeats for channel data
     advert_echoes <on/off>      : print repeats for adverts
-    echo_unk_channels <on/off>  : also dump unk channels (encrypted)
+    echo_unk_chans <on/off>     : also dump unk channels (encrypted)
     color <on/off>              : color off should remove ANSI codes from output
   meshcore-cli behaviour:
     classic_prompt <on/off>     : activates less fancier prompt
