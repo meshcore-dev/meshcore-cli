@@ -2519,7 +2519,9 @@ async def next_cmd(mc, cmds, json_output=False):
                 if cmds[1].isnumeric() :
                     nb = int(cmds[1])
                 else:
-                    nb = get_channel_by_name(mc, cmds[1])['channel_idx']
+                    chan = await get_channel_by_name(mc, cmds[1])
+                    print (chan)
+                    nb = chan['channel_idx']
                 res = await send_chan_msg(mc, nb, cmds[2])
                 logger.debug(res)
                 if res.type == EventType.ERROR:
