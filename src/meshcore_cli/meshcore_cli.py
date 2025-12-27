@@ -446,10 +446,16 @@ async def log_message(mc, msg):
         ct = mc.get_contact_by_key_prefix(msg['pubkey_prefix'])
         if ct is None:
             msg["name"] = msg["pubkey_prefix"]
+            msg["sender"] = msg["pubkey_prefix"]
         else:
             msg["name"] = ct["adv_name"]
+            msg["sender"] = ct["adv_name"]
     elif msg["type"] == "CHAN" :
-        msg["name"] = f"channel {msg['channel_idx']}"
+        if hasattr(mc, 'channels') :
+            msg["sender"] = mc.channels[msg['channel_idx']]["channel_name"]
+        else:
+            msg["sender"] = f"channel {msg['channel_idx']}"
+        msg["name"] = msg["sender"]
     msg["timestamp"] = int(time.time())
 
     with open(log_message.file, "a") as logfile:
@@ -1541,10 +1547,11 @@ async def send_cmd (mc, contact, cmd) :
         if isinstance(contact, dict):
             sent = res.payload.copy()
             sent["type"] = "SENT_CMD"
-            sent["name"] = contact["adv_name"]
+            sent["recipient"] = contact["adv_name"]
             sent["text"] = cmd
             sent["txt_type"] = 1
-            sent["name"] = mc.self_info['name']
+            sent["sender"] = mc.self_info['name']
+            sent["name"] = sent["recipient"]
             await log_message(mc, sent)
     return res
 
@@ -1554,9 +1561,16 @@ async def send_chan_msg(mc, nb, msg):
         sent = res.payload.copy()
         sent["type"] = "SENT_CHAN"
         sent["channel_idx"] = nb
+        if hasattr(mc, "channels"):
+            chan_name = mc.channels[nb]["channel_name"]
+        else:
+            chan_name = f"channel {nb}"
+        sent["chan_name"] = chan_name
+        sent["recipient"] = chan_name
         sent["text"] = msg
         sent["txt_type"] = 0
-        sent["name"] = mc.self_info['name']
+        sent["sender"] = mc.self_info['name']
+        sent["name"] = chan_name
         await log_message(mc, sent)
     return res
 
@@ -1567,10 +1581,11 @@ async def send_msg (mc, contact, msg) :
         if isinstance(contact, dict):
             sent = res.payload.copy()
             sent["type"] = "SENT_MSG"
-            sent["name"] = contact["adv_name"]
+            sent["recipient"] = contact["adv_name"]
             sent["text"] = msg
             sent["txt_type"] = 0
-            sent["name"] = mc.self_info['name']
+            sent["sender"] = mc.self_info['name']
+            sent["name"] = sent["recipient"]
             await log_message(mc, sent)
     return res
 
@@ -1587,10 +1602,11 @@ async def msg_ack (mc, contact, msg) :
         if isinstance(contact, dict):
             sent = res.payload.copy()
             sent["type"] = "SENT_MSG"
-            sent["name"] = contact["adv_name"]
+            sent["recipient"] = contact["adv_name"]
             sent["text"] = msg
             sent["txt_type"] = 0
-            sent["name"] = mc.self_info['name']
+            sent["sender"] = mc.self_info['name']
+            sent["name"] = sent["recipient"]
             await log_message(mc, sent)
     return not res is None
 msg_ack.max_attempts=3
