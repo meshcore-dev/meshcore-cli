@@ -1028,7 +1028,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                 if '%' in dest and scope!=None :
                     dest_scope = dest.split("%")[-1]
                     dest = dest[:-len(dest_scope)-1]
-                nc = mc.get_contact_by_name(dest)
+                nc = await get_contact_from_arg(mc, dest)
                 if nc is None:
                     if dest == "public" :
                         nc = {"adv_name" : "public", "type" : 0, "chan_nb" : 0}
@@ -1083,7 +1083,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                         dest_scope = dest.split("%")[-1]
                         dest = dest[:-len(dest_scope)-1]
                         await set_scope (mc, dest_scope)
-                    tct = mc.get_contact_by_name(dest)
+                    tct = get_contact_from_arg(mc, dest)
                     if len(args)>1 and not tct is None: # a contact, send a message
                         if tct["type"] == 1 or tct["type"] == 3: # client or room
                             last_ack = await msg_ack(mc, tct, line.split(" ", 1)[1])
@@ -1106,7 +1106,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                         dest_scope = contact_name.split("%")[-1]
                         contact_name = contact_name[:-len(dest_scope)-1]
                         await set_scope (mc, dest_scope)
-                    tct = mc.get_contact_by_name(contact_name)
+                    tct = mc.get_contact_from_arg(mc, contact_name)
                     if tct is None:
                         print(f"{contact_name} is not a contact")
                     else:
@@ -1346,9 +1346,7 @@ async def process_contact_chat_line(mc, contact, line):
                 perm = int(perm_string[1:])
             else:
                 perm = int(perm_string,16)
-            ct=mc.get_contact_by_name(name)
-            if ct is None:
-                ct=mc.get_contact_by_key_prefix(name)
+            ct= await get_contact_from_arg(mc, name)
             if ct is None:
                 if name == "self" or mc.self_info["public_key"].startswith(name):
                     key = mc.self_info["public_key"]
@@ -1846,6 +1844,22 @@ async def print_disc_trace_to (mc, contact):
     logger.info(f"Trying {trace}")
 
     await next_cmd(mc, ["trace", trace])
+
+
+async def get_contact_from_arg(mc, arg):
+    contact = None
+    await mc.ensure_contacts()
+
+    # first try with key prefix
+    try: # try only if its a valid hex
+        int(arg ,16)
+        contact = mc.get_contact_by_key_prefix(arg)
+    except ValueError:
+        pass
+    if contact is None: # try by name
+        contact = mc.get_contact_by_name(arg)
+
+    return contact
 
 async def next_cmd(mc, cmds, json_output=False):
     """ process next command """
@@ -2497,8 +2511,7 @@ async def next_cmd(mc, cmds, json_output=False):
                         dest = None
 
                 if dest is None:
-                    await mc.ensure_contacts()
-                    dest = mc.get_contact_by_name(cmds[1])
+                    dest = await get_contact_from_arg(mc, cmds[1])
 
                 if dest is None:
                     if json_output :
@@ -2549,8 +2562,7 @@ async def next_cmd(mc, cmds, json_output=False):
                         dest = None
 
                 if dest is None:
-                    await mc.ensure_contacts()
-                    dest = mc.get_contact_by_name(cmds[1])
+                    dest = await get_contact_from_arg(mc, cmds[1])
 
                 if dest is None:
                     if json_output :
@@ -2627,17 +2639,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "login" | "l" :
                 argnum = 2
-                await mc.ensure_contacts()
-                contact = None
-
-                # first try with key prefix
-                try: # try only if its a valid hex
-                    int(cmds[1],16) 
-                    contact = mc.get_contact_by_key_prefix(cmds[1])
-                except ValueError:
-                    pass
-                if contact is None: # try by name
-                    contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
 
                 if contact is None: # still none ? contact not found
                     if json_output :
@@ -2676,8 +2678,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "logout" :
                 argnum = 1
-                await mc.ensure_contacts()
-                contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
                 res = await mc.commands.send_logout(contact)
                 logger.debug(res)
                 if res.type == EventType.ERROR:
@@ -2689,14 +2690,12 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "contact_timeout" :
                 argnum = 2
-                await mc.ensure_contacts()
-                contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_args(mc, cmds[1])
                 contact["timeout"] = float(cmds[2])
 
             case "disc_path" | "dp" :
                 argnum = 1
-                await mc.ensure_contacts()
-                contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
                 res = await discover_path(mc, contact)
                 if res is None:
                     print(f"Error while discovering path")
@@ -2777,7 +2776,7 @@ async def next_cmd(mc, cmds, json_output=False):
             case "req_telemetry"|"rt" :
                 argnum = 1
                 await mc.ensure_contacts()
-                contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
                 timeout = 0 if not "timeout" in contact else contact["timeout"]
                 res = await mc.commands.req_telemetry_sync(contact, timeout)
                 if res is None :
@@ -2794,8 +2793,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "req_status"|"rs" :
                 argnum = 1
-                await mc.ensure_contacts()
-                contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
                 timeout = 0 if not "timeout" in contact else contact["timeout"]
                 res = await mc.commands.req_status_sync(contact, timeout)
                 if res is None :
@@ -2809,7 +2807,7 @@ async def next_cmd(mc, cmds, json_output=False):
             case "req_mma" | "rm":
                 argnum = 3
                 await mc.ensure_contacts()
-                contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
                 if cmds[2][-1] == "s":
                     from_secs = int(cmds[2][0:-1])
                 elif cmds[2][-1] == "m":
@@ -2838,8 +2836,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "req_acl" :
                 argnum = 1
-                await mc.ensure_contacts()
-                contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
                 timeout = 0 if not "timeout" in contact else contact["timeout"]
                 res = await mc.commands.req_acl_sync(contact, timeout)
                 if res is None :
@@ -2863,8 +2860,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "req_neighbours"|"rn" :
                 argnum = 1
-                await mc.ensure_contacts()
-                contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
                 timeout = 0 if not "timeout" in contact else contact["timeout"]
                 res = await mc.commands.fetch_all_neighbours(contact, timeout=timeout)
                 if res is None :
@@ -2903,8 +2899,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "req_binary" :
                 argnum = 2
-                await mc.ensure_contacts()
-                contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
                 timeout = 0 if not "timeout" in contact else contact["timeout"]
                 res = await mc.commands.req_binary(contact, bytes.fromhex(cmds[2]), timeout)
                 if res is None :
@@ -2978,8 +2973,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "path":
                 argnum = 1
-                res = await mc.ensure_contacts(follow=True)
-                contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
                         print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
@@ -3003,7 +2997,7 @@ async def next_cmd(mc, cmds, json_output=False):
             case "contact_info" | "ci":
                 argnum = 1
                 res = await mc.ensure_contacts(follow=True)
-                contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
                         print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
@@ -3014,8 +3008,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "change_path" | "cp":
                 argnum = 2
-                await mc.ensure_contacts()
-                contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
                         print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
@@ -3037,8 +3030,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "change_flags" | "cf":
                 argnum = 2
-                await mc.ensure_contacts()
-                contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
                         print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
@@ -3054,8 +3046,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "reset_path" | "rp" :
                 argnum = 1
-                await mc.ensure_contacts()
-                contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
                         print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
@@ -3074,8 +3065,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "share_contact" | "sc":
                 argnum = 1
-                await mc.ensure_contacts()
-                contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
                         print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
@@ -3091,8 +3081,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "export_contact"|"ec":
                 argnum = 1
-                await mc.ensure_contacts()
-                contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
                         print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
@@ -3122,8 +3111,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "upload_contact" | "uc" :
                 argnum = 1
-                await mc.ensure_contacts()
-                contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
                         print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
@@ -3167,7 +3155,6 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "remove_contact" :
                 argnum = 1
-                await mc.ensure_contacts()
                 contact = mc.get_contact_by_name(cmds[1])
                 if contact is None:
                     if json_output :
@@ -3289,8 +3276,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "chat_to" | "imto" | "to" :
                 argnum = 1
-                await mc.ensure_contacts()
-                contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
                 await interactive_loop(mc, to=contact)
 
             case "script" :
@@ -3298,8 +3284,7 @@ async def next_cmd(mc, cmds, json_output=False):
                 await process_script(mc, cmds[1], json_output=json_output)
 
             case _ :
-                await mc.ensure_contacts()
-                contact = mc.get_contact_by_name(cmds[0])
+                contact = await get_contact_from_arg(mc, cmds[0])
                 if contact is None:
                     logger.error(f"Unknown command : {cmd}, {cmds} not executed ...")
                     return None
