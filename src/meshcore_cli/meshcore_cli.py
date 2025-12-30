@@ -3424,6 +3424,7 @@ def command_usage() :
     -b <baudrate>   : specify baudrate
     -C              : toggles classic mode for prompt
     -c <on/off>     : disables most of color output if off
+    -r              : repeater mode (raw text CLI, use with -s)
 """)
 
 def get_help_for (cmdname, context="line") :
@@ -3583,6 +3584,223 @@ To remove a channel, use remove_channel, either with channel name or number.
     else:
         print(f"Sorry, no help yet for {cmdname}")
 
+# Repeater mode history file
+MCCLI_REPEATER_HISTORY_FILE = MCCLI_CONFIG_DIR + "repeater_history"
+
+# Repeater command completion dictionary
+REPEATER_COMMANDS = {
+    "ver": None,
+    "board": None,
+    "reboot": None,
+    "advert": None,
+    "clock": {"sync": None},
+    "time": None,
+    "neighbors": None,
+    "stats-core": None,
+    "stats-radio": None,
+    "stats-packets": None,
+    "clear": {"stats": None},
+    "log": {"start": None, "stop": None, "erase": None},
+    "get": {
+        "name": None, "radio": None, "tx": None, "freq": None,
+        "public.key": None, "prv.key": None, "repeat": None, "role": None,
+        "lat": None, "lon": None, "af": None,
+        "rxdelay": None, "txdelay": None, "direct.txdelay": None,
+        "flood.max": None, "flood.advert.interval": None,
+        "advert.interval": None, "guest.password": None,
+        "allow.read.only": None, "multi.acks": None,
+        "int.thresh": None, "agc.reset.interval": None,
+        "bridge.enabled": None, "bridge.delay": None,
+        "bridge.source": None, "bridge.baud": None,
+        "bridge.channel": None, "bridge.secret": None, "bridge.type": None,
+        "adc.multiplier": None, "acl": None,
+    },
+    "set": {
+        "name": None, "radio": None, "tx": None, "freq": None,
+        "prv.key": None, "repeat": {"on": None, "off": None},
+        "lat": None, "lon": None, "af": None,
+        "rxdelay": None, "txdelay": None, "direct.txdelay": None,
+        "flood.max": None, "flood.advert.interval": None,
+        "advert.interval": None, "guest.password": None,
+        "allow.read.only": {"on": None, "off": None},
+        "multi.acks": None, "int.thresh": None, "agc.reset.interval": None,
+        "bridge.enabled": {"on": None, "off": None},
+        "bridge.delay": None, "bridge.source": None,
+        "bridge.baud": None, "bridge.channel": None, "bridge.secret": None,
+        "adc.multiplier": None,
+    },
+    "password": None,
+    "erase": None,
+    "gps": {"on": None, "off": None, "sync": None, "setloc": None, "advert": {"none": None, "share": None, "prefs": None}},
+    "sensor": {"list": None, "get": None, "set": None},
+    "region": {"get": None, "put": None, "remove": None, "save": None, "load": None, "home": None, "allowf": None, "denyf": None},
+    "setperm": None,
+    "tempradio": None,
+    "neighbor.remove": None,
+    "quit": None,
+    "q": None,
+    "help": None,
+}
+
+REPEATER_HELP = f"""
+{ANSI_BCYAN}Repeater CLI Commands:{ANSI_END}
+
+{ANSI_BGREEN}Info:{ANSI_END}
+  ver                 - Firmware version
+  board               - Board name
+  clock               - Show current time
+
+{ANSI_BGREEN}Stats:{ANSI_END}
+  stats-core          - Core stats (uptime, battery, queue)
+  stats-radio         - Radio stats (RSSI, SNR, noise floor)
+  stats-packets       - Packet statistics (sent/recv counts)
+  clear stats         - Reset all statistics
+
+{ANSI_BGREEN}Network:{ANSI_END}
+  neighbors           - Show neighboring repeaters (zero-hop)
+  advert              - Send advertisement now
+
+{ANSI_BGREEN}Logging:{ANSI_END}
+  log start           - Enable packet logging
+  log stop            - Disable packet logging
+  log                 - Dump log file to console
+  log erase           - Erase log file
+
+{ANSI_BGREEN}Configuration (get/set):{ANSI_END}
+  get name            - Node name
+  get radio           - Radio params (freq,bw,sf,cr)
+  get tx              - TX power (dBm)
+  get repeat          - Repeat mode on/off
+  get public.key      - Node public key
+  get advert.interval - Advertisement interval (minutes)
+
+  set name <name>     - Set node name
+  set tx <power>      - Set TX power (dBm)
+  set repeat on|off   - Enable/disable repeating
+  set radio f,bw,sf,cr - Set radio params (reboot to apply)
+  set advert.interval <min> - Set advert interval (60-240 min)
+
+{ANSI_BGREEN}System:{ANSI_END}
+  reboot              - Reboot device
+  erase               - Erase filesystem (serial only)
+
+{ANSI_BYELLOW}Type 'quit' or 'q' to exit, Ctrl+C to abort{ANSI_END}
+"""
+
+async def repeater_loop(port, baudrate):
+    """Interactive loop for repeater text CLI (raw serial commands)"""
+    import serial as pyserial
+
+    print(f"{ANSI_BCYAN}Connecting to repeater at {port} ({baudrate} baud)...{ANSI_END}")
+    try:
+        ser = pyserial.Serial(port, baudrate, timeout=1)
+    except PermissionError:
+        print(f"{ANSI_BRED}Error: Permission denied. Try running with sudo or add user to dialout group.{ANSI_END}")
+        return
+    except Exception as e:
+        print(f"{ANSI_BRED}Error opening serial port: {e}{ANSI_END}")
+        return
+
+    await asyncio.sleep(0.5)  # Wait for connection to stabilize
+    ser.reset_input_buffer()
+
+    # Send initial CR to wake up CLI
+    ser.write(b"\r")
+    await asyncio.sleep(0.2)
+    ser.reset_input_buffer()
+
+    # Try to get device info
+    ser.write(b"ver\r")
+    await asyncio.sleep(0.3)
+    ver_response = ser.read(ser.in_waiting or 256).decode(errors='ignore').strip()
+    device_name = "Repeater"
+    for line in ver_response.split('\n'):
+        line = line.strip()
+        if line and not line.startswith("ver") and ">" not in line[:3]:
+            device_name = line.split('(')[0].strip() if '(' in line else line
+            break
+
+    print(f"{ANSI_BGREEN}Connected!{ANSI_END} Device: {ANSI_BMAGENTA}{device_name}{ANSI_END}")
+    print(f"Type {ANSI_BCYAN}help{ANSI_END} for commands, {ANSI_BCYAN}quit{ANSI_END} to exit, {ANSI_BCYAN}Tab{ANSI_END} for completion")
+    print("-" * 50)
+
+    # Setup history and session
+    try:
+        if os.path.isdir(MCCLI_CONFIG_DIR):
+            our_history = FileHistory(MCCLI_REPEATER_HISTORY_FILE)
+        else:
+            our_history = None
+    except Exception:
+        our_history = None
+
+    session = PromptSession(
+        history=our_history,
+        wrap_lines=False,
+        mouse_support=False,
+        complete_style=CompleteStyle.MULTI_COLUMN
+    )
+
+    # Setup key bindings
+    bindings = KeyBindings()
+
+    @bindings.add("escape")
+    def _(event):
+        event.app.current_buffer.cancel_completion()
+
+    # Build prompt
+    prompt_base = f"{ANSI_BGRAY}{device_name}{ANSI_MAGENTA}>{ANSI_END} "
+
+    # Setup completer
+    completer = NestedCompleter.from_nested_dict(REPEATER_COMMANDS)
+
+    while True:
+        try:
+            cmd = await session.prompt_async(
+                ANSI(prompt_base),
+                completer=completer,
+                complete_while_typing=False,
+                key_bindings=bindings
+            )
+        except (KeyboardInterrupt, EOFError):
+            break
+
+        cmd = cmd.strip()
+
+        if not cmd:
+            continue
+
+        if cmd.lower() in ("quit", "exit", "q"):
+            break
+
+        if cmd.lower() == "help":
+            print(REPEATER_HELP)
+            continue
+
+        # Send command with CR terminator
+        ser.write(f"{cmd}\r".encode())
+        await asyncio.sleep(0.3)
+
+        # Read response
+        response = ser.read(ser.in_waiting or 4096).decode(errors='ignore')
+        if response:
+            # Clean up echo and format response
+            lines = response.strip().split('\n')
+            for line in lines:
+                line = line.strip()
+                if line and line != cmd:  # Skip echo of command
+                    # Color code certain responses
+                    if line.startswith("OK") or line.startswith("ok"):
+                        print(f"{ANSI_GREEN}{line}{ANSI_END}")
+                    elif line.startswith("Error") or line.startswith("ERR"):
+                        print(f"{ANSI_RED}{line}{ANSI_END}")
+                    elif line.startswith("->"):
+                        print(f"{ANSI_CYAN}{line}{ANSI_END}")
+                    else:
+                        print(line)
+
+    ser.close()
+    print(f"\n{ANSI_BGRAY}Disconnected from repeater.{ANSI_END}")
+
 async def main(argv):
     """ Do the job """
     json_output = JSON
@@ -3593,6 +3811,7 @@ async def main(argv):
     hostname = None
     serial_port = None
     baudrate = 115200
+    repeater_mode = False
     timeout = 2
     pin = None
     first_device = False
@@ -3603,7 +3822,7 @@ async def main(argv):
             address = f.readline().strip()
 
     try:
-        opts, args = getopt.getopt(argv, "a:d:s:ht:p:b:fjDhvSlT:Pc:C")
+        opts, args = getopt.getopt(argv, "a:d:s:ht:p:b:fjDhvSlT:Pc:Cr")
     except getopt.GetoptError:
         print("Unrecognized option, use -h to get more help")
         command_usage()
@@ -3615,6 +3834,8 @@ async def main(argv):
                     process_event_message.color = False
             case "-C":
                 interactive_loop.classic = not interactive_loop.classic
+            case "-r":  # repeater mode (raw text CLI)
+                repeater_mode = True
             case "-d" : # name specified on cmdline
                 address = arg
             case "-a" : # address specified on cmdline
@@ -3701,6 +3922,15 @@ async def main(argv):
         logger.setLevel(logging.DEBUG)
     elif (json_output) :
         logger.setLevel(logging.ERROR)
+
+    # Repeater mode - raw text CLI over serial
+    if repeater_mode:
+        if serial_port is None:
+            print("Error: Repeater mode (-r) requires serial port (-s)")
+            command_usage()
+            return
+        await repeater_loop(serial_port, baudrate)
+        return
 
     mc = None
     if not hostname is None : # connect via tcp
