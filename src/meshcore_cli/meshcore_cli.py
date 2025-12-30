@@ -2628,8 +2628,18 @@ async def next_cmd(mc, cmds, json_output=False):
             case "login" | "l" :
                 argnum = 2
                 await mc.ensure_contacts()
-                contact = mc.get_contact_by_name(cmds[1])
-                if contact is None:
+                contact = None
+
+                # first try with key prefix
+                try: # try only if its a valid hex
+                    int(cmds[1],16) 
+                    contact = mc.get_contact_by_key_prefix(cmds[1])
+                except ValueError:
+                    pass
+                if contact is None: # try by name
+                    contact = mc.get_contact_by_name(cmds[1])
+
+                if contact is None: # still none ? contact not found
                     if json_output :
                         print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
                     else:
