@@ -32,7 +32,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.3.12"
+VERSION = "v1.3.13"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -1083,7 +1083,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                         dest_scope = dest.split("%")[-1]
                         dest = dest[:-len(dest_scope)-1]
                         await set_scope (mc, dest_scope)
-                    tct = get_contact_from_arg(mc, dest)
+                    tct = await get_contact_from_arg(mc, dest)
                     if len(args)>1 and not tct is None: # a contact, send a message
                         if tct["type"] == 1 or tct["type"] == 3: # client or room
                             last_ack = await msg_ack(mc, tct, line.split(" ", 1)[1])
