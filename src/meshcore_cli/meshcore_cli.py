@@ -32,7 +32,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.3.14"
+VERSION = "v1.3.15"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -2679,38 +2679,56 @@ async def next_cmd(mc, cmds, json_output=False):
             case "logout" :
                 argnum = 1
                 contact = await get_contact_from_arg(mc, cmds[1])
-                res = await mc.commands.send_logout(contact)
-                logger.debug(res)
-                if res.type == EventType.ERROR:
-                    print(f"Error while logout: {res}")
-                elif json_output :
-                    print(json.dumps(res.payload))
+                if contact is None:
+                    if json_output :
+                        print(json.dumps({"error" : "unknown contact"}))
+                    else:
+                        print(f"Unknown contact {cmds[1]}")
                 else:
-                    print("Logout ok")
-
+                    res = await mc.commands.send_logout(contact)
+                    logger.debug(res)
+                    if res.type == EventType.ERROR:
+                        print(f"Error while logout: {res}")
+                    elif json_output :
+                        print(json.dumps(res.payload))
+                    else:
+                        print("Logout ok")
+    
             case "contact_timeout" :
                 argnum = 2
                 contact = await get_contact_from_args(mc, cmds[1])
-                contact["timeout"] = float(cmds[2])
+                if contact is None:
+                    if json_output :
+                        print(json.dumps({"error" : "unknown contact"}))
+                    else:
+                        print(f"Unknown contact {cmds[1]}")
+                else:
+                    contact["timeout"] = float(cmds[2])
 
             case "disc_path" | "dp" :
                 argnum = 1
                 contact = await get_contact_from_arg(mc, cmds[1])
-                res = await discover_path(mc, contact)
-                if res is None:
-                    print(f"Error while discovering path")
-                else:
+                if contact is None:
                     if json_output :
-                        print(json.dumps(res, indent=4))
+                        print(json.dumps({"error" : "unknown contact"}))
                     else:
-                        if "error" in res :
-                            print("Timeout while discovering path")
+                        print(f"Unknown contact {cmds[1]}")
+                else:
+                    res = await discover_path(mc, contact)
+                    if res is None:
+                        print(f"Error while discovering path")
+                    else:
+                        if json_output :
+                            print(json.dumps(res, indent=4))
                         else:
-                            outp = res['out_path']
-                            outp = outp if outp != "" else "direct"
-                            inp = res['in_path']
-                            inp = inp if inp != "" else "direct"
-                            print(f"Path for {contact['adv_name']}: out {outp}, in {inp}")
+                            if "error" in res :
+                                print("Timeout while discovering path")
+                            else:
+                                outp = res['out_path']
+                                outp = outp if outp != "" else "direct"
+                                inp = res['in_path']
+                                inp = inp if inp != "" else "direct"
+                                print(f"Path for {contact['adv_name']}: out {outp}, in {inp}")
 
             case "node_discover"|"nd" :
                 argnum = 1
@@ -2777,138 +2795,173 @@ async def next_cmd(mc, cmds, json_output=False):
                 argnum = 1
                 await mc.ensure_contacts()
                 contact = await get_contact_from_arg(mc, cmds[1])
-                timeout = 0 if not "timeout" in contact else contact["timeout"]
-                res = await mc.commands.req_telemetry_sync(contact, timeout)
-                if res is None :
+                if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "Getting data"}))
+                        print(json.dumps({"error" : "unknown contact"}))
                     else:
-                        print("Error getting data")
-                else :
-                    print(json.dumps({
-                        "name": contact["adv_name"],
-                        "pubkey_pre": contact["public_key"][0:16],
-                        "lpp": res,
-                    }, indent = 4))
+                        print(f"Unknown contact {cmds[1]}")
+                else:
+                    timeout = 0 if not "timeout" in contact else contact["timeout"]
+                    res = await mc.commands.req_telemetry_sync(contact, timeout)
+                    if res is None :
+                        if json_output :
+                            print(json.dumps({"error" : "Getting data"}))
+                        else:
+                            print("Error getting data")
+                    else :
+                        print(json.dumps({
+                            "name": contact["adv_name"],
+                            "pubkey_pre": contact["public_key"][0:16],
+                            "lpp": res,
+                        }, indent = 4))
 
             case "req_status"|"rs" :
                 argnum = 1
                 contact = await get_contact_from_arg(mc, cmds[1])
-                timeout = 0 if not "timeout" in contact else contact["timeout"]
-                res = await mc.commands.req_status_sync(contact, timeout)
-                if res is None :
+                if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "Getting data"}))
+                        print(json.dumps({"error" : "unknown contact"}))
                     else:
-                        print("Error getting data")
-                else :
-                    print(json.dumps(res, indent=4))
+                        print(f"Unknown contact {cmds[1]}")
+                else:
+                    timeout = 0 if not "timeout" in contact else contact["timeout"]
+                    res = await mc.commands.req_status_sync(contact, timeout)
+                    if res is None :
+                        if json_output :
+                            print(json.dumps({"error" : "Getting data"}))
+                        else:
+                            print("Error getting data")
+                    else :
+                        print(json.dumps(res, indent=4))
 
             case "req_mma" | "rm":
                 argnum = 3
                 await mc.ensure_contacts()
                 contact = await get_contact_from_arg(mc, cmds[1])
-                if cmds[2][-1] == "s":
-                    from_secs = int(cmds[2][0:-1])
-                elif cmds[2][-1] == "m":
-                    from_secs = int(cmds[2][0:-1]) * 60
-                elif cmds[2][-1] == "h":
-                    from_secs = int(cmds[2][0:-1]) * 3600
-                else :
-                    from_secs = int(cmds[2]) * 60 # same as tdeck
-                if cmds[3][-1] == "s":
-                    to_secs = int(cmds[3][0:-1])
-                elif cmds[3][-1] == "m":
-                    to_secs = int(cmds[3][0:-1]) * 60
-                elif cmds[3][-1] == "h":
-                    to_secs = int(cmds[3][0:-1]) * 3600
-                else :
-                    to_secs = int(cmds[3]) * 60
-                timeout = 0 if not "timeout" in contact else contact["timeout"]
-                res = await mc.commands.req_mma_sync(contact, from_secs, to_secs, timeout)
-                if res is None :
+                if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "Getting data"}))
+                        print(json.dumps({"error" : "unknown contact"}))
                     else:
-                        print("Error getting data")
-                else :
-                    print(json.dumps(res, indent=4))
+                        print(f"Unknown contact {cmds[1]}")
+                else:
+                    if cmds[2][-1] == "s":
+                        from_secs = int(cmds[2][0:-1])
+                    elif cmds[2][-1] == "m":
+                        from_secs = int(cmds[2][0:-1]) * 60
+                    elif cmds[2][-1] == "h":
+                        from_secs = int(cmds[2][0:-1]) * 3600
+                    else :
+                        from_secs = int(cmds[2]) * 60 # same as tdeck
+                    if cmds[3][-1] == "s":
+                        to_secs = int(cmds[3][0:-1])
+                    elif cmds[3][-1] == "m":
+                        to_secs = int(cmds[3][0:-1]) * 60
+                    elif cmds[3][-1] == "h":
+                        to_secs = int(cmds[3][0:-1]) * 3600
+                    else :
+                        to_secs = int(cmds[3]) * 60
+                    timeout = 0 if not "timeout" in contact else contact["timeout"]
+                    res = await mc.commands.req_mma_sync(contact, from_secs, to_secs, timeout)
+                    if res is None :
+                        if json_output :
+                            print(json.dumps({"error" : "Getting data"}))
+                        else:
+                            print("Error getting data")
+                    else :
+                        print(json.dumps(res, indent=4))
 
             case "req_acl" :
                 argnum = 1
                 contact = await get_contact_from_arg(mc, cmds[1])
-                timeout = 0 if not "timeout" in contact else contact["timeout"]
-                res = await mc.commands.req_acl_sync(contact, timeout)
-                if res is None :
+                if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "Getting data"}))
+                        print(json.dumps({"error" : "unknown contact"}))
                     else:
-                        print("Error getting data")
-                else :
-                    if json_output:
-                        print(json.dumps(res, indent=4))
-                    else:
-                        for e in res:
-                            name = e['key']
-                            ct = mc.get_contact_by_key_prefix(e['key'])
-                            if ct is None:
-                                if mc.self_info["public_key"].startswith(e['key']):
-                                    name = f"{'self':<20} [{e['key']}]"
-                            else:
-                                name = f"{ct['adv_name']:<20} [{e['key']}]"
-                            print(f"{name:{' '}<35}: {e['perm']:02x}")
+                        print(f"Unknown contact {cmds[1]}")
+                else:
+                    timeout = 0 if not "timeout" in contact else contact["timeout"]
+                    res = await mc.commands.req_acl_sync(contact, timeout)
+                    if res is None :
+                        if json_output :
+                            print(json.dumps({"error" : "Getting data"}))
+                        else:
+                            print("Error getting data")
+                    else :
+                        if json_output:
+                            print(json.dumps(res, indent=4))
+                        else:
+                            for e in res:
+                                name = e['key']
+                                ct = mc.get_contact_by_key_prefix(e['key'])
+                                if ct is None:
+                                    if mc.self_info["public_key"].startswith(e['key']):
+                                        name = f"{'self':<20} [{e['key']}]"
+                                else:
+                                    name = f"{ct['adv_name']:<20} [{e['key']}]"
+                                print(f"{name:{' '}<35}: {e['perm']:02x}")
 
             case "req_neighbours"|"rn" :
                 argnum = 1
                 contact = await get_contact_from_arg(mc, cmds[1])
-                timeout = 0 if not "timeout" in contact else contact["timeout"]
-                res = await mc.commands.fetch_all_neighbours(contact, timeout=timeout)
-                if res is None :
+                if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "Getting data"}))
+                        print(json.dumps({"error" : "unknown contact"}))
                     else:
-                        print("Error getting data")
-                else :
-                    if json_output:
-                        print(json.dumps(res, indent=4))
-                    else:
-                        width = os.get_terminal_size().columns
-                        print(f"Got {res['results_count']} neighbours out of {res['neighbours_count']} from {contact['adv_name']}:")
-                        for n in res['neighbours']:
-                            ct = mc.get_contact_by_key_prefix(n["pubkey"])
-                            if ct and width > 60 :
-                                name = f"[{n['pubkey'][0:8]}] {ct['adv_name']}"
-                                name = f"{name:30}"
-                            elif ct :
-                                name = f"{ct['adv_name']}"
-                                name = f"{name:20}"
-                            else:
-                                name = f"[{n['pubkey']}]"
+                        print(f"Unknown contact {cmds[1]}")
+                else:
+                    timeout = 0 if not "timeout" in contact else contact["timeout"]
+                    res = await mc.commands.fetch_all_neighbours(contact, timeout=timeout)
+                    if res is None :
+                        if json_output :
+                            print(json.dumps({"error" : "Getting data"}))
+                        else:
+                            print("Error getting data")
+                    else :
+                        if json_output:
+                            print(json.dumps(res, indent=4))
+                        else:
+                            width = os.get_terminal_size().columns
+                            print(f"Got {res['results_count']} neighbours out of {res['neighbours_count']} from {contact['adv_name']}:")
+                            for n in res['neighbours']:
+                                ct = mc.get_contact_by_key_prefix(n["pubkey"])
+                                if ct and width > 60 :
+                                    name = f"[{n['pubkey'][0:8]}] {ct['adv_name']}"
+                                    name = f"{name:30}"
+                                elif ct :
+                                    name = f"{ct['adv_name']}"
+                                    name = f"{name:20}"
+                                else:
+                                    name = f"[{n['pubkey']}]"
+    
+                                t_s = n['secs_ago']
+                                time_ago = f"{t_s}s"
+                                if t_s / 86400 >= 1 : # result in days
+                                    time_ago = f"{int(t_s/86400)}d ago{f' ({time_ago})' if width > 62 else ''}"
+                                elif t_s / 3600 >= 1 : # result in days
+                                    time_ago = f"{int(t_s/3600)}h ago{f' ({time_ago})' if width > 62 else ''}"
+                                elif t_s / 60 >= 1 : # result in min
+                                    time_ago = f"{int(t_s/60)}m ago{f' ({time_ago})' if width > 62 else ''}"
 
-                            t_s = n['secs_ago']
-                            time_ago = f"{t_s}s"
-                            if t_s / 86400 >= 1 : # result in days
-                                time_ago = f"{int(t_s/86400)}d ago{f' ({time_ago})' if width > 62 else ''}"
-                            elif t_s / 3600 >= 1 : # result in days
-                                time_ago = f"{int(t_s/3600)}h ago{f' ({time_ago})' if width > 62 else ''}"
-                            elif t_s / 60 >= 1 : # result in min
-                                time_ago = f"{int(t_s/60)}m ago{f' ({time_ago})' if width > 62 else ''}"
-
-
-                            print(f" {name} {time_ago}, {n['snr']}dB{' SNR' if width > 66 else ''}")
+                                print(f" {name} {time_ago}, {n['snr']}dB{' SNR' if width > 66 else ''}")
 
             case "req_binary" :
                 argnum = 2
                 contact = await get_contact_from_arg(mc, cmds[1])
-                timeout = 0 if not "timeout" in contact else contact["timeout"]
-                res = await mc.commands.req_binary(contact, bytes.fromhex(cmds[2]), timeout)
-                if res is None :
+                if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "Getting binary data"}))
+                        print(json.dumps({"error" : "unknown contact"}))
                     else:
-                        print("Error getting binary data")
-                else :
-                    print(json.dumps(res))
+                        print(f"Unknown contact {cmds[1]}")
+                else:
+                    timeout = 0 if not "timeout" in contact else contact["timeout"]
+                    res = await mc.commands.req_binary(contact, bytes.fromhex(cmds[2]), timeout)
+                    if res is None :
+                        if json_output :
+                            print(json.dumps({"error" : "Getting binary data"}))
+                        else:
+                            print("Error getting binary data")
+                    else :
+                        print(json.dumps(res))
 
             case "contacts" | "list" | "lc":
                 await mc.ensure_contacts(follow=True)
