@@ -114,6 +114,53 @@ def print_above(str):
     for l in lines:
         print_one_line_above(l)
 
+
+# --- Helpers for persistent history printing ---
+import datetime as _dt
+
+def _tail_json_lines(fp: str, n: int) -> list:
+    if not fp or not os.path.exists(fp):
+        return []
+    try:
+        with open(fp, 'rb') as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            block = 4096
+            data = b''
+            lines = []
+            while len(lines) <= n and size > 0:
+                size = max(0, size - block)
+                f.seek(size)
+                data = f.read(block) + data
+                lines = data.splitlines()
+            tail = lines[-n:] if len(lines) >= n else lines
+            rows = []
+            for l in tail:
+                if not l.strip():
+                    continue
+                try:
+                    rows.append(json.loads(l.decode('utf-8')))
+                except Exception:
+                    pass
+            return rows
+    except Exception:
+        return []
+
+def _print_history(fp: str, n: int, json_out: bool = False):
+    rows = _tail_json_lines(fp, n)
+    if json_out:
+        print(json.dumps(rows, ensure_ascii=False))
+        return
+    for r in rows:
+        ts = r.get('timestamp') or r.get('ts')
+        when = _dt.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S') if isinstance(ts, (int, float)) else (ts or '')
+        direction = r.get('dir') or ('OUT' if (r.get('type','').startswith('SENT') or r.get('type')=='ACK') else 'IN')
+        who = r.get('name') or r.get('recipient') or r.get('sender') or (f"chan:{r.get('channel_idx')}" if 'channel_idx' in r else '')
+        text = r.get('text') or r.get('message') or ''
+        ack = r.get('ack')
+        ack_str = '' if ack is None else (' [ACK✔]' if ack else ' [ACK✘]')
+        print(f"[{when}] {direction} {who}: {text}{ack_str}")
+
 async def process_event_message(mc, ev, json_output, end="\n", above=False):
     """ display incoming message """
     if ev is None :
@@ -3311,6 +3358,24 @@ async def next_cmd(mc, cmds, json_output=False):
             case "wait_ack" | "wa" | "}":
                 res = await mc.wait_for_event(EventType.ACK, timeout = 5)
                 logger.debug(res)
+                # log ACK into persistent history
+                try:
+                    if res is not None and log_message.file:
+                        ack_rec = {
+                            "type": "ACK",
+                            "timestamp": int(time.time()),
+                            "ack": (res.type != EventType.ERROR),
+                        }
+                        try:
+                            for k,v in res.payload.items():
+                                ack_rec[k] = v
+                        except Exception:
+                            pass
+                        with open(log_message.file, "a", encoding="utf-8") as f:
+                            f.write(json.dumps(ack_rec) + "
+")
+                except Exception:
+                    pass
                 if res is None:
                     if json_output :
                         print(json.dumps({"error" : "Timeout waiting ack"}))
@@ -3320,6 +3385,38 @@ async def next_cmd(mc, cmds, json_output=False):
                     print(json.dumps(res.payload, indent=4))
                 else :
                     print("Msg acked")
+
+            case "history":
+                n = 50
+                j = json_output
+                if len(cmds) > 1:
+                    for a in cmds[1:]:
+                        if a.isdigit():
+                            n = int(a)
+                        elif a == "--json":
+                            j = True
+                # Determine history file
+                fp = log_message.file
+                if not fp:
+                    # fallback: newest ~/.config/meshcore/*.msgs
+                    base = MCCLI_CONFIG_DIR
+                    try:
+                        files = [f for f in os.listdir(base) if f.endswith('.msgs')]
+                        if files:
+                            files_full = [os.path.join(base, f) for f in files]
+                            files_full.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+                            fp = files_full[0]
+                        else:
+                            fp = None
+                    except Exception:
+                        fp = None
+                if not fp:
+                    if j:
+                        print("[]")
+                    else:
+                        print("No history file")
+                else:
+                    _print_history(fp, n, json_out=j)
 
             case "msgs_subscribe" | "ms" :
                 await subscribe_to_msgs(mc, json_output=json_output)
