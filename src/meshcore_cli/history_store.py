@@ -65,4 +65,3 @@ class HistoryStore:
                     # poškozená řádka – přeskočit
                     pass
             return out
-
