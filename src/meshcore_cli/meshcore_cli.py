@@ -2696,7 +2696,7 @@ async def next_cmd(mc, cmds, json_output=False):
     
             case "contact_timeout" :
                 argnum = 2
-                contact = await get_contact_from_args(mc, cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
                         print(json.dumps({"error" : "unknown contact"}))
