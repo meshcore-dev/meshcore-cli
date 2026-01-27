@@ -32,7 +32,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.3.15"
+VERSION = "v1.3.16"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -3828,6 +3828,13 @@ async def repeater_loop(port, baudrate):
         if cmd.lower() == "help":
             print(REPEATER_HELP)
             continue
+
+        if cmd.lower() == "clock sync" or cmd.lower() == "st" or cmd.lower() == "sync_time":
+            cur_time = int(time.time())
+            print(f'{ANSI_GREEN}Syncing clock to'
+                  f' {datetime.datetime.fromtimestamp(cur_time).strftime("%Y-%m-%d %H:%M:%S")}'
+                  f' ({cur_time}){ANSI_END}')
+            cmd = f"time {cur_time}"
 
         # Send command with CR terminator
         ser.write(f"{cmd}\r".encode())
