@@ -2791,6 +2791,75 @@ async def next_cmd(mc, cmds, json_output=False):
 
                             print(f" {name:22} {type:>4} SNR: {n['SNR_in']:6,.2f}->{n['SNR']:6,.2f} RSSI: ->{n['RSSI']:4}")
 
+            case "req_regions":
+                argnum = 1
+                await mc.ensure_contacts()
+                contact = await get_contact_from_arg(mc, cmds[1])
+                if contact is None:
+                    if json_output :
+                        print(json.dumps({"error" : "unknown contact"}))
+                    else:
+                        print(f"Unknown contact {cmds[1]}")
+                else:
+                    timeout = 0 if not "timeout" in contact else contact["timeout"]
+                    res = await mc.commands.req_regions_sync(contact, timeout)
+                    if res is None :
+                        if json_output :
+                            print(json.dumps({"error" : "Getting data"}))
+                        else:
+                            print("Error getting data")
+                    else :
+                        if json_output :
+                            print(json.dumps({"repeater": contact["adv_name"]}, {"regions": res}))
+                        else :
+                            print(f"{contact['adv_name']} repeats {res}")
+
+            case "req_owner":
+                argnum = 1
+                await mc.ensure_contacts()
+                contact = await get_contact_from_arg(mc, cmds[1])
+                if contact is None:
+                    if json_output :
+                        print(json.dumps({"error" : "unknown contact"}))
+                    else:
+                        print(f"Unknown contact {cmds[1]}")
+                else:
+                    timeout = 0 if not "timeout" in contact else contact["timeout"]
+                    res = await mc.commands.req_owner_sync(contact, timeout)
+                    if res is None :
+                        if json_output :
+                            print(json.dumps({"error" : "Getting data"}))
+                        else:
+                            print("Error getting data")
+                    else :
+                        if json_output:
+                            print(json.dumps(res))
+                        else:
+                            if res["owner"] == "":
+                                print(f"{res['name']} has no owner set")
+                            else:
+                                print(f"{res['name']} is owned by {res['owner']}") 
+
+            case "req_clock":
+                argnum = 1
+                await mc.ensure_contacts()
+                contact = await get_contact_from_arg(mc, cmds[1])
+                if contact is None:
+                    if json_output :
+                        print(json.dumps({"error" : "unknown contact"}))
+                    else:
+                        print(f"Unknown contact {cmds[1]}")
+                else:
+                    timeout = 0 if not "timeout" in contact else contact["timeout"]
+                    res = await mc.commands.req_basic_sync(contact, timeout)
+                    if res is None :
+                        if json_output :
+                            print(json.dumps({"error" : "Getting data"}))
+                        else:
+                            print("Error getting data")
+                    else :
+                        print(int.from_bytes(bytes.fromhex(res["data"][0:8]), byteorder="little", signed=False))
+
             case "req_telemetry"|"rt" :
                 argnum = 1
                 await mc.ensure_contacts()
