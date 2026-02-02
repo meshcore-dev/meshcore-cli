@@ -626,6 +626,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "print_path_updates" : {"on":None,"off":None},
             "classic_prompt" : {"on" : None, "off":None},
             "manual_add_contacts" : {"on" : None, "off":None},
+            "autoadd_config" : None,
             "telemetry_mode_base" : {"always" : None, "device":None, "never":None},
             "telemetry_mode_loc" : {"always" : None, "device":None, "never":None},
             "telemetry_mode_env" : {"always" : None, "device":None, "never":None},
@@ -658,6 +659,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "print_new_contacts":None,
             "classic_prompt":None,
             "manual_add_contacts":None,
+            "autoadd_config":None,
             "telemetry_mode_base":None,
             "telemetry_mode_loc":None,
             "telemetry_mode_env":None,
@@ -2144,6 +2146,11 @@ async def next_cmd(mc, cmds, json_output=False):
                             print(f"Error : {res}")
                         else :
                             print(f"manual add contact: {mac}")
+                    case "autoadd_config":
+                        flags = int(cmds[2], 0)
+                        res = await mc.commands.set_autoadd_config(flags)
+                        if res.type == EventType.ERROR:
+                            print(f"Error : {res}")
                     case "multi_acks":
                         ma = (cmds[2] == "on") or (cmds[2] == "true") or (cmds[2] == "yes") or (cmds[2] == "1")
                         res = await mc.commands.set_multi_acks(ma)
@@ -2369,6 +2376,12 @@ async def next_cmd(mc, cmds, json_output=False):
                             print(json.dumps({"manual_add_contacts" : mc.self_info["manual_add_contacts"]}))
                         else :
                             print(f"manual_add_contacts: {mc.self_info['manual_add_contacts']}")
+                    case "autoadd_config" :
+                        res = await mc.commands.get_autoadd_config()
+                        if res is None or res.type == EventType.ERROR:
+                            logger.error("Can't get autoadd_config")
+                        else :
+                            print(f"0x{res.payload['config']:02x}")
                     case "telemetry_mode_base" :
                         await mc.commands.send_appstart()
                         if json_output :
@@ -3633,6 +3646,7 @@ def get_help_for (cmdname, context="line") :
       - when off device automatically adds contacts from adverts
       - when on contacts must be added manually using add_pending 
         (pending contacts list is built by meshcli from adverts while connected) 
+    autoadd_config              : set autoadd_config flags
   display:
     print_timestamp <on/off/fmt>: toggle printing of timestamp, can be strftime format
     print_snr <on/off>          : toggle snr display in messages
@@ -3684,6 +3698,17 @@ By default contacts are automatically added to the device contact list when an a
 With growing number of users, it becomes necessary to manage contact list and one of the ways is to add contacts manually to the device. This is done by turning on manual_add_contacts. Once this option has been turned on, a pending list is built by meshcore-cli from the received adverts. You can view the list issuing a pending_contacts command, flush the list using flush_pending or add a contact from the list with add_pending followed by the key of the contact or its name (both will be auto-completed with tab).
 
 This feature only really works in interactive mode.
+
+You can also set autoadd_config flag to filter contacts that are automatically added to your contact list 
+
+// Auto-add config bitmask
+// Bit 0: If set, overwrite oldest non-favourite contact when contacts file is full
+// Bits 1-4: these indicate which contact types to auto-add when manual_contact_mode = 0x01
+#define AUTO_ADD_OVERWRITE_OLDEST (1 << 0)  // 0x01 - overwrite oldest non-favourite when full
+#define AUTO_ADD_CHAT             (1 << 1)  // 0x02 - auto-add Chat (Companion) (ADV_TYPE_CHAT)
+#define AUTO_ADD_REPEATER         (1 << 2)  // 0x04 - auto-add Repeater (ADV_TYPE_REPEATER)
+#define AUTO_ADD_ROOM_SERVER      (1 << 3)  // 0x08 - auto-add Room Server (ADV_TYPE_ROOM)
+#define AUTO_ADD_SENSOR           (1 << 4)  // 0x10 - auto-add Sensor (ADV_TYPE_SENSOR)
 
 Note: There is also an auto_update_contacts setting that has nothing to do with adding contacts, it permits to automatically sync contact lists between device and meshcore-cli (when there is an update in name, location or path).
 """)
