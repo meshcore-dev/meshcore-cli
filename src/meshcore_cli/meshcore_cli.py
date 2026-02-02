@@ -32,7 +32,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.3.16"
+VERSION = "v1.3.17"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -591,6 +591,9 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
         "req_telemetry" : contact_list,
         "req_binary" : contact_list,
         "req_mma" : contact_list,
+        "req_owner" : contact_list,
+        "req_regions" : contact_list,
+        "req_clock" : contact_list,
         "self_telemetry" : None,
         "get_channel": None,
         "set_channel": None,
@@ -1290,7 +1293,10 @@ async def process_contact_chat_line(mc, contact, line):
             line.startswith("req_status") or line.startswith("rs") or\
             line.startswith("req_neighbours") or line.startswith("rn") or\
             line.startswith("req_telemetry") or line.startswith("rt") or\
-            line.startswith("req_acl") or\
+            line.startswith("req_regions") or line.startswith("rr") or\
+            line.startswith("req_owner") or line.startswith("ro") or\
+            line.startswith("req_clock") or line.startswith("rc") or\
+            line.startswith("req_acl") or line.startswith("ra") or\
             line.startswith("path") or\
             line.startswith("logout") :
         args = [line.split()[0], contact['adv_name']]
@@ -2791,7 +2797,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
                             print(f" {name:22} {type:>4} SNR: {n['SNR_in']:6,.2f}->{n['SNR']:6,.2f} RSSI: ->{n['RSSI']:4}")
 
-            case "req_regions":
+            case "req_regions"|"rr":
                 argnum = 1
                 await mc.ensure_contacts()
                 contact = await get_contact_from_arg(mc, cmds[1])
@@ -2814,7 +2820,7 @@ async def next_cmd(mc, cmds, json_output=False):
                         else :
                             print(f"{contact['adv_name']} repeats {res}")
 
-            case "req_owner":
+            case "req_owner"|"ro":
                 argnum = 1
                 await mc.ensure_contacts()
                 contact = await get_contact_from_arg(mc, cmds[1])
@@ -2840,7 +2846,7 @@ async def next_cmd(mc, cmds, json_output=False):
                             else:
                                 print(f"{res['name']} is owned by {res['owner']}") 
 
-            case "req_clock":
+            case "req_clock"|"rc":
                 argnum = 1
                 await mc.ensure_contacts()
                 contact = await get_contact_from_arg(mc, cmds[1])
@@ -2939,7 +2945,7 @@ async def next_cmd(mc, cmds, json_output=False):
                     else :
                         print(json.dumps(res, indent=4))
 
-            case "req_acl" :
+            case "req_acl"|"ra" :
                 argnum = 1
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
@@ -3503,9 +3509,12 @@ def command_help():
     reset_path <ct>        : resets path to a contact to flood      rp
     change_path <ct> <pth> : change the path to a contact           cp
     change_flags <ct> <f>  : change contact flags (tel_l|tel_a|star)cf
+    req_acl <ct>           : requests access control list for node  ra
     req_telemetry <ct>     : prints telemetry data as json          rt
+    req_regions <ct>       : prints regions from repeater           rr
+    req_owner <ct>         : prints owner for a repeater            ro
+    req_clock <ct>         : prints repeater timestamp (for sync)   rc
     req_mma <ct>           : requests min/max/avg for a sensor      rm
-    req_acl <ct>           : requests access control list for sensor
     pending_contacts       : show pending contacts
     add_pending <pending>  : manually add pending contact
     flush_pending          : flush pending contact list
