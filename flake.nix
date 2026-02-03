@@ -17,7 +17,7 @@
 
         meshcore = python3Packages.buildPythonPackage rec {
           pname = "meshcore";
-          version = "2.2.3";
+          version = "2.2.7";
           pyproject = true;
 
           src = python3Packages.fetchPypi {
