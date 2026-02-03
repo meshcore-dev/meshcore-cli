@@ -22,7 +22,7 @@
 
           src = python3Packages.fetchPypi {
             inherit pname version;
-            sha256 = "sha256-lmMflAlrNnfsc10J3CBxor9ftHK10bWyGTbjASJv82s=";
+            sha256 = "sha256-F7mjj6NuDvXgw0Zq3SbFiKCnXkAgm2EkxKToiL1VXJA=";
           };
 
           build-system = [ python3Packages.hatchling ];
@@ -30,7 +30,7 @@
           dependencies = [
             python3Packages.bleak
             python3Packages.pycayennelpp
-            python3Packages.pyserial-asyncio
+            python3Packages.pyserial-asyncio-fast
           ];
 
           pythonImportsCheck = [ "meshcore" ];
