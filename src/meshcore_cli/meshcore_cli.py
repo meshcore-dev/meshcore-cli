@@ -32,7 +32,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.3.17"
+VERSION = "v1.3.18"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -1297,7 +1297,7 @@ async def process_contact_chat_line(mc, contact, line):
             line.startswith("req_telemetry") or line.startswith("rt") or\
             line.startswith("req_regions") or line.startswith("rr") or\
             line.startswith("req_owner") or line.startswith("ro") or\
-            line.startswith("req_clock") or line.startswith("rc") or\
+            line.startswith("req_clock") or\
             line.startswith("req_acl") or line.startswith("ra") or\
             line.startswith("path") or\
             line.startswith("logout") :
@@ -2147,7 +2147,22 @@ async def next_cmd(mc, cmds, json_output=False):
                         else :
                             print(f"manual add contact: {mac}")
                     case "autoadd_config":
-                        flags = int(cmds[2], 0)
+                        cmds[2] = cmds[2].lower() # lowercase argument
+                        try:
+                            flags = int(cmds[2], 0)
+                        except ValueError: # not int, find bits from string
+                            flags = 0
+                            if "ov" in cmds[2]: # overwrite
+                                flags = flags|0x01
+                            if "cha" in cmds[2] or "cli" in cmds[2]: # chat / client
+                                flags = flags|0x02
+                            if "rep" in cmds[2] or "rpt" in cmds[2]: # repeater
+                                flags = flags|0x04
+                            if "roo" in cmds[2]: # room
+                                flags = flags|0x08
+                            if "sen" in cmds[2]: # sensor
+                                flags = flags|0x10
+
                         res = await mc.commands.set_autoadd_config(flags)
                         if res.type == EventType.ERROR:
                             print(f"Error : {res}")
@@ -2859,7 +2874,7 @@ async def next_cmd(mc, cmds, json_output=False):
                             else:
                                 print(f"{res['name']} is owned by {res['owner']}") 
 
-            case "req_clock"|"rc":
+            case "req_clock":
                 argnum = 1
                 await mc.ensure_contacts()
                 contact = await get_contact_from_arg(mc, cmds[1])
@@ -3526,7 +3541,7 @@ def command_help():
     req_telemetry <ct>     : prints telemetry data as json          rt
     req_regions <ct>       : prints regions from repeater           rr
     req_owner <ct>         : prints owner for a repeater            ro
-    req_clock <ct>         : prints repeater timestamp (for sync)   rc
+    req_clock <ct>         : prints repeater timestamp (for sync)
     req_mma <ct>           : requests min/max/avg for a sensor      rm
     pending_contacts       : show pending contacts
     add_pending <pending>  : manually add pending contact
@@ -3646,7 +3661,7 @@ def get_help_for (cmdname, context="line") :
       - when off device automatically adds contacts from adverts
       - when on contacts must be added manually using add_pending 
         (pending contacts list is built by meshcli from adverts while connected) 
-    autoadd_config              : set autoadd_config flags
+    autoadd_config              : set autoadd_config flags (see ?autoadd)
   display:
     print_timestamp <on/off/fmt>: toggle printing of timestamp, can be strftime format
     print_snr <on/off>          : toggle snr display in messages
@@ -3688,7 +3703,7 @@ Managing Flood Scope in interactive mode
         - contact_type (ct)
 """)
 
-    elif cmdname == "pending_contacts" or cmdname == "flush_pending" or cmdname == "add_pending":
+    elif cmdname == "pending_contacts" or cmdname == "flush_pending" or cmdname == "add_pending" or cmdname == "autoadd":
         print("""Contact management
 
 To receive a message from another user, it is necessary to have its public key. This key is stored on a contact list in the device, and this list has a finite size (50 when meshcore started, now over 350 for most devices).
@@ -3699,7 +3714,7 @@ With growing number of users, it becomes necessary to manage contact list and on
 
 This feature only really works in interactive mode.
 
-You can also set autoadd_config flag to filter contacts that are automatically added to your contact list 
+You can also set autoadd_config flag to filter contacts that are automatically added to your contact list (this will work when manual_add_contact is set to True).
 
 // Auto-add config bitmask
 // Bit 0: If set, overwrite oldest non-favourite contact when contacts file is full
@@ -3709,6 +3724,8 @@ You can also set autoadd_config flag to filter contacts that are automatically a
 #define AUTO_ADD_REPEATER         (1 << 2)  // 0x04 - auto-add Repeater (ADV_TYPE_REPEATER)
 #define AUTO_ADD_ROOM_SERVER      (1 << 3)  // 0x08 - auto-add Room Server (ADV_TYPE_ROOM)
 #define AUTO_ADD_SENSOR           (1 << 4)  // 0x10 - auto-add Sensor (ADV_TYPE_SENSOR)
+
+Instead of an int you can use can make a string containing keys which can be (ov, cli, rep, room or sen), parser will look for keys in the string.
 
 Note: There is also an auto_update_contacts setting that has nothing to do with adding contacts, it permits to automatically sync contact lists between device and meshcore-cli (when there is an update in name, location or path).
 """)
