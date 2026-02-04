@@ -1466,6 +1466,7 @@ async def apply_command_to_contacts(mc, contact_filter, line, json_output=False)
     contact_type = None
     min_hops = None
     max_hops = None
+    flags = None
     count = 0
 
     await mc.ensure_contacts()
@@ -1510,6 +1511,9 @@ async def apply_command_to_contacts(mc, contact_filter, line, json_output=False)
             elif f[1] == "=":
                 min_hops = int(f[2:])
                 max_hops = int(f[2:])
+        elif f[0] == "b": # flag bits
+            if f[1] == "=":
+                flags = int(f[2:])
         else:
             logger.error(f"Unknown filter {f}")
             return
@@ -1520,7 +1524,8 @@ async def apply_command_to_contacts(mc, contact_filter, line, json_output=False)
                 (upd_before is None or contact["lastmod"] < upd_before) and\
                 (upd_after is None or contact["lastmod"] > upd_after) and\
                 (min_hops is None or contact["out_path_len"] >= min_hops) and\
-                (max_hops is None or contact["out_path_len"] <= max_hops):
+                (max_hops is None or contact["out_path_len"] <= max_hops) and\
+                (flags is None or contact["flags"] & flags == flags):
 
             count = count + 1
 
@@ -3642,6 +3647,7 @@ def get_help_for (cmdname, context="line") :
      - h, matches number of hops
      - d, direct, similar to h>-1
      - f, flood, similar to h<0 or h=-1
+     - b, show nodes that have all specified flag bits on (bit 0 is favourite)
 
     Note: Some commands like contact_name (aka cn), contact_key (aka ck), contact_type (aka ct), reset_path (aka rp), forget_password (aka fp) can be chained. There is also a sleep command taking an optional event. The sleep will be issued after the command, it helps limiting rate through repeaters ...
 
