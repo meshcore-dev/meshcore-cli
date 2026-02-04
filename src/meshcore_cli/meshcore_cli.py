@@ -670,6 +670,11 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "max_flood_attempts":None,
             "flood_after":None,
             "custom":None,
+            "stats":None,
+            "status":None,
+            "stats_core":None,
+            "stats_radio":None,
+            "stats_packets":None,
         },
         "?get":None,
         "?set":None,
@@ -2436,6 +2441,47 @@ async def next_cmd(mc, cmds, json_output=False):
                                 logger.error("Couldn't get custom variables")
                         else :
                             print(json.dumps(res.payload, indent=4))
+                    case "stats_core":
+                        res = await mc.commands.get_stats_core()
+                        logger.debug(res)
+                        if res.type == EventType.ERROR:
+                            logger.error("Couldn't get stats")
+                        else:
+                            print(json.dumps(res.payload, indent=4))
+                    case "stats_radio":
+                        res = await mc.commands.get_stats_radio()
+                        logger.debug(res)
+                        if res.type == EventType.ERROR:
+                            logger.error("Couldn't get stats")
+                        else:
+                            print(json.dumps(res.payload, indent=4))
+                    case "stats_packets":
+                        res = await mc.commands.get_stats_packets()
+                        logger.debug(res)
+                        if res.type == EventType.ERROR:
+                            logger.error("Couldn't get stats")
+                        else:
+                            print(json.dumps(res.payload, indent=4))
+                    case "stats"|"status":
+                        stats = {}
+                        res = await mc.commands.get_stats_core()
+                        stats.update(res.payload)
+                        if res.type == EventType.ERROR:
+                            logger.error("Couldn't get core stats")
+                        else:
+                            stats.update(res.payload)
+                        res = await mc.commands.get_stats_radio()
+                        if res.type == EventType.ERROR:
+                            logger.error("Couldn't get radio stats")
+                        else:
+                            stats.update(res.payload)
+                        res = await mc.commands.get_stats_packets()
+                        if res.type == EventType.ERROR:
+                            logger.error("Couldn't get packets stats")
+                        else:
+                            stats.update(res.payload)
+                        print(json.dumps(stats, indent=4))
+
                     case _ :
                         res = await mc.commands.get_custom_vars()
                         logger.debug(res)
@@ -3638,6 +3684,10 @@ def get_help_for (cmdname, context="line") :
     print_path_updates : display path updates as they come
     custom             : all custom variables in json format
                 each custom var can also be get/set directly
+    stats/status       : print status of the node
+    stats_core         : core stats (bat/error/uptime/queue)
+    stats_radio        : radio stats (noise/rssi/snr/tx_air/rx_air)
+    stats_packets      : packets stats (recv/sent/flood/direct)
 """)
 
     elif cmdname == "set" :
