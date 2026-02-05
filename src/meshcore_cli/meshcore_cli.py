@@ -3487,8 +3487,13 @@ async def next_cmd(mc, cmds, json_output=False):
                 await interactive_loop(mc, to=contact)
 
             case "script" :
-                argnum = 1
-                await process_script(mc, cmds[1], json_output=json_output)
+                if len(cmds) > 1:
+                    argnum = 1
+                    filename = cmds[1]
+                else:
+                    file_name = await prompt_for_file()
+                if not file_name is None:
+                    await process_script(mc, file_name, json_output=json_output)
 
             case _ :
                 contact = await get_contact_from_arg(mc, cmds[0])
