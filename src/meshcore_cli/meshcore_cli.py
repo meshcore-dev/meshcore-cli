@@ -4060,7 +4060,8 @@ async def repeater_loop(port, baudrate):
                     for line in file:
                         if line.strip() == "": # terminate on empty line
                             break
-                        ser.write(f"{line.rstrip()}\r".encode())
+                        if not line.startswith(";"): # don't send lines starting with ;
+                            ser.write(f"{line.rstrip()}\r".encode())
                     ser.write("\r".encode())
 
             except FileNotFoundError:
