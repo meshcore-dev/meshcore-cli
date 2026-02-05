@@ -4058,6 +4058,8 @@ async def repeater_loop(port, baudrate):
                 with open(file_path, "r") as file:
                     ser.write("region load\r".encode())
                     for line in file:
+                        if line.strip() == "": # terminate on empty line
+                            break
                         ser.write(f"{line.rstrip()}\r".encode())
                     ser.write("\r".encode())
 
