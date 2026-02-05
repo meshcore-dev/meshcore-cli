@@ -3910,6 +3910,20 @@ REPEATER_HELP = f"""
   set radio f,bw,sf,cr - Set radio params (reboot to apply)
   set advert.interval <min> - Set advert interval (60-240 min)
 
+{ANSI_BGREEN}Region management:{ANSI_END}
+  region             - display currently configured regions
+  region load        - (don't use) reads region config line by line
+  region save        - save current region config to flash
+  region download    - download regions config from node to file
+  region upload      - upload regions config to node from file
+  region home        - get/set home region
+  region get         - get info (and parent) for a region
+  region put         - adds or update a region
+  region remove      - remove a region definition
+  region allowf      - gives flood permission to a region
+  region denyf       - remove flood permission to a region
+  region list        - list allowed/denied regions
+
 {ANSI_BGREEN}System:{ANSI_END}
   reboot              - Reboot device
   erase               - Erase filesystem (serial only)
@@ -4028,9 +4042,9 @@ async def repeater_loop(port, baudrate):
                   f' ({cur_time}){ANSI_END}')
             cmd = f"time {cur_time}"
 
-        if cmd.lower().startswith("regions upload"):
+        if cmd.lower().startswith("region upload"):
             try:
-                if cmd.lower() == "regions upload": # prompt for a filename
+                if cmd.lower() == "region upload": # prompt for a filename
                     path_completer = PathCompleter(expanduser=True)
                     file_path = await session.prompt_async(
                         "Filename: ", 
@@ -4042,7 +4056,7 @@ async def repeater_loop(port, baudrate):
                     file_path = cmd.lower().split(" ", 3)[2]
 
                 with open(file_path, "r") as file:
-                    ser.write("regions load\r".encode())
+                    ser.write("region load\r".encode())
                     for line in file:
                         ser.write(f"{line.rstrip()}\r".encode())
                     ser.write("\r".encode())
@@ -4055,9 +4069,9 @@ async def repeater_loop(port, baudrate):
             # in any case, send an empty line and clean buffer
             cmd = ""
 
-        if cmd.lower().startswith("regions download"):
+        if cmd.lower().startswith("region download"):
             try:
-                if cmd.lower() == "regions download": # prompt for a filename
+                if cmd.lower() == "region download": # prompt for a filename
                     path_completer = PathCompleter(expanduser=True)
                     file_path = await session.prompt_async(
                         "Filename: ", 
@@ -4070,7 +4084,7 @@ async def repeater_loop(port, baudrate):
 
 
                 with open(file_path, "w") as file:
-                    ser.write("regions\r".encode()) # send regions command
+                    ser.write("region\r".encode()) # send regions command
 
                     # seek start of regions description
                     line = ser.readline().decode(errors='ignore')
