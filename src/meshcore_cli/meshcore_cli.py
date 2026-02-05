@@ -16,7 +16,7 @@ from pathlib import Path
 import traceback
 from prompt_toolkit.shortcuts import PromptSession
 from prompt_toolkit.shortcuts import CompleteStyle
-from prompt_toolkit.completion import NestedCompleter
+from prompt_toolkit.completion import NestedCompleter, PathCompleter
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.formatted_text import ANSI
@@ -3504,7 +3504,7 @@ async def next_cmd(mc, cmds, json_output=False):
     except IndexError:
         logger.error("Error in parameters")
         return None
-    except EOFError:
+    except (EOFError, KeyboardInterrupt):
         logger.error("Cancelled")
         return None
 
@@ -3815,6 +3815,7 @@ To remove a channel, use remove_channel, either with channel name or number.
 
 # Repeater mode history file
 MCCLI_REPEATER_HISTORY_FILE = MCCLI_CONFIG_DIR + "repeater_history"
+MCCLI_REGION_FILES_HISTORY = MCCLI_CONFIG_DIR + "region_files_history"
 
 # Repeater command completion dictionary
 REPEATER_COMMANDS = {
@@ -3862,7 +3863,7 @@ REPEATER_COMMANDS = {
     "erase": None,
     "gps": {"on": None, "off": None, "sync": None, "setloc": None, "advert": {"none": None, "share": None, "prefs": None}},
     "sensor": {"list": None, "get": None, "set": None},
-    "region": {"get": None, "put": None, "remove": None, "save": None, "load": None, "home": None, "allowf": None, "denyf": None},
+    "region": {"get": None, "put": None, "remove": None, "save": None, "load": None, "home": None, "allowf": None, "denyf": None, "upload": None, "download": None},
     "setperm": None,
     "tempradio": None,
     "neighbor.remove": None,
@@ -3969,6 +3970,21 @@ async def repeater_loop(port, baudrate):
         complete_style=CompleteStyle.MULTI_COLUMN
     )
 
+    try:
+        if os.path.isDIR(MCCLI_CONFIG_DIR):
+            region_files_history = FileHistory(MCCLI_REGION_FILES_HISTORY)
+        else:
+            region_files_history = None
+    except Exception:
+        region_files_history = None
+
+    file_session = PromptSession(
+        history=region_files_history,
+        wrap_lines=False,
+        mouse_support=False,
+        complete_style=CompleteStyle.MULTI_COLUMN
+    )
+
     # Setup key bindings
     bindings = KeyBindings()
 
@@ -4012,24 +4028,88 @@ async def repeater_loop(port, baudrate):
                   f' ({cur_time}){ANSI_END}')
             cmd = f"time {cur_time}"
 
+        if cmd.lower().startswith("regions upload"):
+            try:
+                if cmd.lower() == "regions upload": # prompt for a filename
+                    path_completer = PathCompleter(expanduser=True)
+                    file_path = await session.prompt_async(
+                        "Filename: ", 
+                        completer=path_completer,
+                        complete_while_typing=False,
+                        key_bindings=bindings
+                    )
+                else :
+                    file_path = cmd.lower().split(" ", 3)[2]
+
+                with open(file_path, "r") as file:
+                    ser.write("regions load\r".encode())
+                    for line in file:
+                        ser.write(f"{line.rstrip()}\r".encode())
+                    ser.write("\r".encode())
+
+            except FileNotFoundError:
+                logger.error("File not found")
+            except (EOFError, KeyboardInterrupt):
+                logger.info("Region upload canceled")
+
+            # in any case, send an empty line and clean buffer
+            cmd = ""
+
+        if cmd.lower().startswith("regions download"):
+            try:
+                if cmd.lower() == "regions download": # prompt for a filename
+                    path_completer = PathCompleter(expanduser=True)
+                    file_path = await session.prompt_async(
+                        "Filename: ", 
+                        completer=path_completer,
+                        complete_while_typing=False,
+                        key_bindings=bindings
+                    )
+                else :
+                    file_path = cmd.lower().split(" ", 3)[2]
+
+
+                with open(file_path, "w") as file:
+                    ser.write("regions\r".encode()) # send regions command
+
+                    # seek start of regions description
+                    line = ser.readline().decode(errors='ignore')
+                    while not line.startswith("  ->") :
+                        line = ser.readline().decode(errors='ignore')
+
+                    line = line[5:]
+
+                    while line.rstrip() != "":
+                        file.write(line)
+                        line = ser.readline().decode(errors='ignore')
+
+            except FileNotFoundError:
+                logger.error("File not found")
+            except (EOFError, KeyboardInterrupt):
+                logger.info("Region download canceled")
+
+            # in any case, send an empty line to clean buffer
+            continue
+
         # Send command with CR terminator
-        ser.write(f"{cmd}\r".encode())
+        if cmd != "":
+            ser.write(f"{cmd}\r".encode())
         await asyncio.sleep(0.3)
 
         # Read response
         response = ser.read(ser.in_waiting or 4096).decode(errors='ignore')
         if response:
             # Clean up echo and format response
-            lines = response.strip().split('\n')
+            lines = response.rstrip().split('\n')
             for line in lines:
-                line = line.strip()
+                line = line.rstrip()
                 if line and line != cmd:  # Skip echo of command
                     # Color code certain responses
-                    if line.startswith("OK") or line.startswith("ok"):
+                    if line.strip().startswith("OK") or line.strip().startswith("ok"):
                         print(f"{ANSI_GREEN}{line}{ANSI_END}")
-                    elif line.startswith("Error") or line.startswith("ERR"):
+                    elif line.strip().startswith("Error") or line.startswith("ERR"):
                         print(f"{ANSI_RED}{line}{ANSI_END}")
-                    elif line.startswith("->"):
+                    elif line.strip().startswith("->"):
                         print(f"{ANSI_CYAN}{line}{ANSI_END}")
                     else:
                         print(line)
