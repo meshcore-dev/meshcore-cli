@@ -4055,6 +4055,7 @@ async def repeater_loop(port, baudrate):
                 else :
                     file_path = cmd.lower().split(" ", 3)[2]
 
+                file_path = file_path.replace("~", str(Path.home()))
                 with open(file_path, "r") as file:
                     ser.write("region load\r".encode())
                     for line in file:
@@ -4085,6 +4086,7 @@ async def repeater_loop(port, baudrate):
                 else :
                     file_path = cmd.lower().split(" ", 3)[2]
 
+                file_path = file_path.replace("~", str(Path.home()))
 
                 with open(file_path, "w") as file:
                     ser.write("region\r".encode()) # send regions command
