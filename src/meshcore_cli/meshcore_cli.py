@@ -756,6 +756,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "flood.max":None,
             "advert.interval" : None,
             "guest.password" : None,
+            "owner.info":None,
             "rxdelay": None,
             "txdelay": None,
             "direct.tx_delay":None,
@@ -783,6 +784,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "flood.max" : None,
             "advert.interval" : None,
             "guest.password" : None,
+            "owner.info":None,
             "allow.read.only" : {"on": None, "off": None},
             "rxdelay" : None,
             "txdelay": None,
@@ -3849,6 +3851,7 @@ REPEATER_COMMANDS = {
         "bridge.source": None, "bridge.baud": None,
         "bridge.channel": None, "bridge.secret": None, "bridge.type": None,
         "adc.multiplier": None, "acl": None,
+        "owner.info": None,
     },
     "set": {
         "name": None, "radio": None, "tx": None, "freq": None,
@@ -3863,6 +3866,7 @@ REPEATER_COMMANDS = {
         "bridge.delay": None, "bridge.source": None,
         "bridge.baud": None, "bridge.channel": None, "bridge.secret": None,
         "adc.multiplier": None,
+        "owner.info": None,
     },
     "password": None,
     "erase": None,
@@ -3908,12 +3912,14 @@ REPEATER_HELP = f"""
   get repeat          - Repeat mode on/off
   get public.key      - Node public key
   get advert.interval - Advertisement interval (minutes)
+  get owner.info      - Owner information
 
   set name <name>     - Set node name
   set tx <power>      - Set TX power (dBm)
   set repeat on|off   - Enable/disable repeating
   set radio f,bw,sf,cr - Set radio params (reboot to apply)
   set advert.interval <min> - Set advert interval (60-240 min)
+  set owner.info <i>  - Set owner information
 
 {ANSI_BGREEN}Region management:{ANSI_END}
   region             - display currently configured regions
