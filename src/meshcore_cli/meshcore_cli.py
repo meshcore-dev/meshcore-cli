@@ -3924,10 +3924,9 @@ REPEATER_HELP = f"""
 
 {ANSI_BGREEN}Region management:{ANSI_END}
   region             - display currently configured regions
-  region load        - (don't use) reads region config line by line
   region save        - save current region config to flash
   region download    - download regions config from node to file
-  region upload      - upload regions config to node from file
+  region (up)load      - upload regions config to node from file
   region home        - get/set home region
   region get         - get info (and parent) for a region
   region put         - adds or update a region
@@ -4011,9 +4010,10 @@ async def process_repeater_line(ser, cmd, echo=False, repeater_name=None) :
               f' ({cur_time}){ANSI_END}')
         cmd = f"time {cur_time}"
 
-    if cmd.lower().startswith("region upload"):
+    if cmd.lower().startswith("region upload") or\
+            cmd.lower().startswith("region load"): # removing normal load behavior
         try:
-            if cmd.lower() == "region upload": # prompt for a filename
+            if len(cmd.split(" ")) < 3: # prompt for a filename
                 file_path = await prompt_for_file()
             else :
                 file_path = cmd.lower().split(" ", 3)[2]
