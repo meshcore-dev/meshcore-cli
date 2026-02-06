@@ -3999,7 +3999,7 @@ async def process_repeater_script(ser, file):
                 logger.error(f"Error processing {line}")
                 break
 
-async def process_repeater_line(ser, cmd, echo=False) :
+async def process_repeater_line(ser, cmd, echo=False, repeater_name=None) :
     if cmd.lower() == "help":
         print(REPEATER_HELP)
         return True
@@ -4048,6 +4048,13 @@ async def process_repeater_line(ser, cmd, echo=False) :
             file_path = file_path.replace("~", str(Path.home()))
 
             with open(file_path, "w") as file:
+                # write header (name and timestamp)
+                if repeater_name is None:
+                    repeater_name = await get_repeater_name(ser)
+
+                file.write(f"; Regions spec downloaded from {repeater_name}\n")
+                file.write(f"; On {datetime.datetime.fromtimestamp(time.time()).strftime('%a %d %b %Y %H:%M %z')}\n")
+
                 ser.write("region\r".encode()) # send regions command
 
                 # seek start of regions description
@@ -4060,6 +4067,8 @@ async def process_repeater_line(ser, cmd, echo=False) :
                 while line.rstrip() != "":
                     file.write(line)
                     line = ser.readline().decode(errors='ignore')
+
+                logger.info(f"{ANSI_CYAN}Wrote regions spec to {file_path}{ANSI_END}")
         except FileNotFoundError:
             logger.error("File not found")
             return False
@@ -4139,7 +4148,7 @@ async def setup_repeater_serial(port, baudrate):
 
     return ser
 
-async def repeater_loop(ser):
+async def get_repeater_name(ser):
     # Try to get device name
     ser.write(b"get name\r")
     line = ""
@@ -4151,6 +4160,9 @@ async def repeater_loop(ser):
     if (line.startswith("  -> > ")):
         device_name = line[7:]
 
+    return device_name
+
+async def get_repeater_version(ser):
     # Getting version
     ser.write(b"ver\r")
     line = ser.readline().decode(errors="ignore").rstrip()
@@ -4161,6 +4173,13 @@ async def repeater_loop(ser):
     line = ser.readline().decode(errors="ignore").rstrip()
     if (line.startswith("  -> ")):
         device_version = line[6:]
+
+    return device_version
+
+async def repeater_loop(ser):
+
+    device_name = await get_repeater_name(ser)
+    device_version = await get_repeater_version(ser)
 
     print(f"{ANSI_BGREEN}Connected!{ANSI_END} Device: {ANSI_BMAGENTA}{device_name}{ANSI_END} version {ANSI_BMAGENTA}{device_version}{ANSI_END}")
     print(f"Type {ANSI_BCYAN}help{ANSI_END} for commands, {ANSI_BCYAN}quit{ANSI_END} to exit, {ANSI_BCYAN}Tab{ANSI_END} for completion")
@@ -4214,7 +4233,7 @@ async def repeater_loop(ser):
         if cmd.lower() in ("quit", "exit", "q"):
             break
 
-        await process_repeater_line(ser, cmd)
+        await process_repeater_line(ser, cmd, repeater_name=device_name)
 
 
 async def main(argv):
