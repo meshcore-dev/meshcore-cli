@@ -4117,6 +4117,8 @@ async def process_repeater_line(ser, cmd, echo=False, repeater_name=None) :
                     print(f"{ANSI_RED}{line}{ANSI_END}")
                 elif line.strip().startswith("->"):
                     print(f"{ANSI_CYAN}{line}{ANSI_END}")
+                elif line.strip().startswith("DEBUG"):
+                    pass
                 else:
                     print(line)
             if "-> Unknown command" in line or \
