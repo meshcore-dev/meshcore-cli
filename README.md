@@ -10,7 +10,7 @@ You can send commands as parameters to the meshcore-cli command (from your shell
 
 There is also an interactive mode (this is the default when no command is passed). In interactive mode you can enter a contact (another client a repeater, a sensor or a room) and interact with it. For clients, interaction consists in sending/receiving messages. For repeaters, rooms or sensors it will directly give you the remote cli (you can still send messages to rooms using double quote prefix or msg command).
 
-Note that meshcore-cli only interacts with companion radios (through BLE, Serial or TCP), you can't connect to a repeater using its serial interface.
+By default meshcore-cli interacts with companion radios (through BLE, Serial or TCP). A serial repeater mode has been introduced, which is triggered using `-r`, which mainly adds line editing, history and completion to the serial interface, adds time syncing through `clock sync` and let you download/upload regions specs from a file.
 
 Also, most meshcore companions only have one interface compiled in at a time. So you can't connect via Serial to a node, which has been compiled as a BLE companion.
 
