@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "meshcore-cli"
-version = "1.4.0"
+version = "1.4.1"
 authors = [
   { name="Florent de Lamotte", email="florent@frizoncorrea.fr" },
 ]
-description = "Command line interface to meshcore companion radios"
+description = "Command line interface to meshcore companion radios and repeaters"
 readme = "README.md"
 requires-python = ">=3.10"
 classifiers = [
@@ -17,8 +17,8 @@ classifiers = [
 ]
 license = "MIT"
 license-files = ["LICEN[CS]E*"]
-dependencies = [ "meshcore >= 2.2.7",
-				 "bleak >= 0.22, <2.0", 
+dependencies = [ "meshcore >= 2.2.8",
+				 "bleak >= 0.22", 
 				 "prompt_toolkit >= 3.0.50", 
 				 "requests >= 2.28.0", 
 				 "pycryptodome" ]
