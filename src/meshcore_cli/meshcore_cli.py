@@ -4313,12 +4313,11 @@ async def main(argv):
                 version()
                 return
             case "-f": # connect to first encountered device
-                address = ""
                 first_device = True
             case "-q": # quiet (turns logger to ERROR only)
                 quiet = True
             case "-l" :
-                if BLEAK_AVAILABLE:
+                if BLEAK_AVAILABLE and not repeater_mode:
                     print("BLE devices:")
                     try :
                         devices = await BleakScanner.discover(timeout=timeout)
@@ -4329,7 +4328,8 @@ async def main(argv):
                                 print(f" {d.address}  {d.name}")
                     except (BleakError, BleakDBusError):
                         print(" No BLE HW")
-                print("\nSerial ports:")
+                    print("")
+                print("Serial ports:")
                 ports = serial.tools.list_ports.comports()
                 for port, desc, hwid in sorted(ports):
                     print(f" {port:<18} {desc} [{hwid}]")
@@ -4337,7 +4337,7 @@ async def main(argv):
             case "-S" :
                 choices = []
 
-                if BLEAK_AVAILABLE:
+                if BLEAK_AVAILABLE and not repeater_mode:
                     try :
                         devices = await BleakScanner.discover(timeout=timeout)
                         for d in devices:
