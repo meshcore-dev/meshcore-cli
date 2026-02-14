@@ -680,6 +680,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "stats_core":None,
             "stats_radio":None,
             "stats_packets":None,
+            "allowed_repeat_freq":None,
         },
         "?get":None,
         "?set":None,
@@ -1923,6 +1924,8 @@ async def next_cmd(mc, cmds, json_output=False):
                         print(f" Model: {res.payload['model']}")
                         print(f" Version: {res.payload['ver']}")
                         print(f" Build date: {res.payload['fw_build']}")
+                        if "repeat" in res.payload :
+                            print(f" Repeat: {'on' if res.payload['repeat'] else 'off'}")
                     else :
                         print(f" Firmware version : {res.payload['fw ver']}")
 
@@ -2074,7 +2077,14 @@ async def next_cmd(mc, cmds, json_output=False):
                             print("ok")
                     case "radio":
                         params=cmds[2].split(",")
-                        res=await mc.commands.set_radio(params[0], params[1], params[2], params[3])
+                        if len (params) > 4:
+                            repeat = params[4] == "repeat" or\
+                                params[4] == "on" or\
+                                params[4] == "1" or\
+                                params[4] == "yes"
+                            res=await mc.commands.set_radio(params[0], params[1], params[2], params[3], repeat)
+                        else:
+                            res=await mc.commands.set_radio(params[0], params[1], params[2], params[3])
                         logger.debug(res)
                         if res.type == EventType.ERROR:
                             print(f"Error: {res}")
@@ -2373,6 +2383,18 @@ async def next_cmd(mc, cmds, json_output=False):
                                 "radio_cr":   mc.self_info["radio_cr"]}))
                         else:
                             print(f"{mc.self_info['radio_freq']},{mc.self_info['radio_bw']},{mc.self_info['radio_sf']},{mc.self_info['radio_cr']}")
+                    case "repeat":
+                        res = await mc.commands.send_device_query()
+                        logger.debug(res)
+                        if res.type == EventType.ERROR :
+                            print(f"ERROR: {res}")
+                        elif json_output :
+                            print(json.dumps(res.payload, indent=4))
+                        else :
+                            if "repeat" in res.payload :
+                                print(f"Repeat: {'on' if res.payload['repeat'] else 'off'}")
+                            else:
+                                print("Can't repeat")
                     case "bat" :
                         res = await mc.commands.get_bat()
                         logger.debug(res)
@@ -2498,7 +2520,9 @@ async def next_cmd(mc, cmds, json_output=False):
                         else:
                             stats.update(res.payload)
                         print(json.dumps(stats, indent=4))
-
+                    case "allowed_repeat_freq" :
+                        res = await mc.commands.get_allowed_repeat_freq()
+                        print(json.dumps(res.payload))
                     case _ :
                         res = await mc.commands.get_custom_vars()
                         logger.debug(res)
@@ -3712,6 +3736,7 @@ def get_help_for (cmdname, context="line") :
     stats_core         : core stats (bat/error/uptime/queue)
     stats_radio        : radio stats (noise/rssi/snr/tx_air/rx_air)
     stats_packets      : packets stats (recv/sent/flood/direct)
+    allowed_repeat_freq: possible frequency ranges for repeater mode
 """)
 
     elif cmdname == "set" :
