@@ -2375,14 +2375,24 @@ async def next_cmd(mc, cmds, json_output=False):
                             print(f"{mc.self_info['adv_lon']}")
                     case "radio":
                         await mc.commands.send_appstart()
-                        if json_output :
-                            print(json.dumps(
-                            {"radio_freq": mc.self_info["radio_freq"],
+                        radio = {"radio_freq": mc.self_info["radio_freq"],
                                 "radio_bw":   mc.self_info["radio_bw"],
                                 "radio_sf":   mc.self_info["radio_sf"],
-                                "radio_cr":   mc.self_info["radio_cr"]}))
+                                "radio_cr":   mc.self_info["radio_cr"]}
+
+                        res = await mc.commands.send_device_query()
+                        if res.type != EventType.ERROR :
+                            if "repeat" in res.payload:
+                                radio["repeat"] = res.payload["repeat"]
+
+                        if json_output :
+                            print(json.dumps(radio))
                         else:
-                            print(f"{mc.self_info['radio_freq']},{mc.self_info['radio_bw']},{mc.self_info['radio_sf']},{mc.self_info['radio_cr']}")
+                            print(f"{radio['radio_freq']},{radio['radio_bw']},{radio['radio_sf']},{radio['radio_cr']}",end="")
+                            if "repeat" in radio:
+                                print(f",{'on' if radio['repeat'] else 'off'}")
+                            else:
+                                print("")
                     case "repeat":
                         res = await mc.commands.send_device_query()
                         logger.debug(res)
