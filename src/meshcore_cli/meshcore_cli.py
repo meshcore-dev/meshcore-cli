@@ -4436,6 +4436,8 @@ async def main(argv):
         mc = await MeshCore.create_tcp(host=hostname, port=port, debug=debug, only_error=json_output)
     elif not serial_port is None : # connect via serial port
         mc = await MeshCore.create_serial(port=serial_port, baudrate=baudrate, debug=debug, only_error=json_output)
+        if mc is None: # did not connect
+            logger.error("To connect to a repeater, use -r option.")
     elif BLEAK_AVAILABLE : # connect via ble
         client = None
         if device or address and len(address.split(":")) == 6 :
