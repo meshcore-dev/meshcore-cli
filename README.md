@@ -88,6 +88,7 @@ Commands are given after arguments, they can be chained and some have shortcuts.
     card                   : export this node URI                   e
     ver                    : firmware version                       v
     reboot                 : reboots node
+    clkreboot              : reboots node and clock on esp32
     sleep &lt;secs&gt;           : sleeps for a given amount of secs      s
     wait_key               : wait until user presses &lt;Enter&gt;        wk
     apply_to &lt;f&gt; &lt;cmds&gt;    : sends cmds to contacts matching f      at
