@@ -641,6 +641,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "max_attempts" : None,
             "max_flood_attempts" : None,
             "flood_after" : None,
+            "path_hash_mode": None,
         },
         "get" : {"name":None,
             "bat":None,
@@ -681,6 +682,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "stats_radio":None,
             "stats_packets":None,
             "allowed_repeat_freq":None,
+            "path_hash_mode":None,
         },
         "?get":None,
         "?set":None,
@@ -740,6 +742,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
         "time" : None,
         "clock" : {"sync" : None},
         "reboot" : None,
+        "clkreboot":None,
         "start ota" : None,
         "password" : None,
         "neighbors" : None,
@@ -2093,6 +2096,18 @@ async def next_cmd(mc, cmds, json_output=False):
                             print(json.dumps(res.payload, indent=4))
                         else:
                             print("ok")
+                    case "path_hash_mode":
+                        mode = int(cmds[2])
+                        if mode >= 3:
+                            logger.error(f"Can't set value to {mode}")
+                        else:
+                            res = await mc.commands.set_path_hash_mode(mode)
+                            if res.type == EventType.ERROR:
+                                print(f"Error: {res}")
+                            elif json_output:
+                                print(json.dumps(res.payload, indent=4))
+                            else:
+                                print("ok")
                     case "name":
                         res = await mc.commands.set_name(cmds[2])
                         logger.debug(res)
@@ -2406,6 +2421,18 @@ async def next_cmd(mc, cmds, json_output=False):
                                 print(f"Repeat: {'on' if res.payload['repeat'] else 'off'}")
                             else:
                                 print("Can't repeat")
+                    case "path_hash_mode":
+                        res = await mc.commands.send_device_query()
+                        logger.debug(res)
+                        if res.type == EventType.ERROR :
+                            print(f"ERROR: {res}")
+                        elif json_output :
+                            print(json.dumps(res.payload, indent=4))
+                        else :
+                            if "path_hash_mode" in res.payload :
+                                print(f"{res.payload['path_hash_mode']}")
+                            else:
+                                print("Not available")
                     case "bat" :
                         res = await mc.commands.get_bat()
                         logger.debug(res)
@@ -3748,6 +3775,7 @@ def get_help_for (cmdname, context="line") :
     stats_radio        : radio stats (noise/rssi/snr/tx_air/rx_air)
     stats_packets      : packets stats (recv/sent/flood/direct)
     allowed_repeat_freq: possible frequency ranges for repeater mode
+    path_hash_mode
 """)
 
     elif cmdname == "set" :
@@ -3772,6 +3800,7 @@ def get_help_for (cmdname, context="line") :
       - when on contacts must be added manually using add_pending 
         (pending contacts list is built by meshcli from adverts while connected) 
     autoadd_config              : set autoadd_config flags (see ?autoadd)
+    path_hash_mode <value>
   display:
     print_timestamp <on/off/fmt>: toggle printing of timestamp, can be strftime format
     print_snr <on/off>          : toggle snr display in messages
