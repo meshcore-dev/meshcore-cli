@@ -2945,7 +2945,7 @@ async def next_cmd(mc, cmds, json_output=False):
                         print(f"Discovered {len(dn)} nodes:")
                         for n in dn:
                             try :
-                                name = f"{n['pubkey'][0:2]} {mc.get_contact_by_key_prefix(n['pubkey'])['adv_name']}"
+                                name = f"{n['pubkey'][0:6]} {mc.get_contact_by_key_prefix(n['pubkey'])['adv_name']}"
                             except TypeError:
                                 name = n["pubkey"][0:16]
                             if n['node_type'] >= len(CONTACT_TYPENAMES):
@@ -2953,7 +2953,7 @@ async def next_cmd(mc, cmds, json_output=False):
                             else:
                                 type = CONTACT_TYPENAMES[n['node_type']]
 
-                            print(f" {name:22} {type:>4} SNR: {n['SNR_in']:6,.2f}->{n['SNR']:6,.2f} RSSI: ->{n['RSSI']:4}")
+                            print(f" {name:28} {type:>4} SNR: {n['SNR_in']:6,.2f}->{n['SNR']:6,.2f} RSSI: ->{n['RSSI']:4}")
 
             case "req_regions"|"rr":
                 argnum = 1
