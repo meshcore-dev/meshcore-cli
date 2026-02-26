@@ -243,8 +243,12 @@ async def handle_log_rx(event):
     if route_type == 0x00 or route_type == 0x03: # has transport code
         transport_code = pbuf.read(4)    # discard transport code
 
-    path_len = pbuf.read(1)[0]
-    path = pbuf.read(path_len).hex() # Beware of traces where pathes are mixed
+    path_byte = pbuf.read(1)[0]
+    path_hash_size = ((path_byte & 0xC0) >> 6) + 1
+    path_len = (path_byte & 0x3F)
+    # here path_len is number of hops, not number of bytes
+
+    path = pbuf.read(path_len*path_hash_size).hex() # Beware of traces where pathes are mixed
 
     try :
         route_typename = ROUTE_TYPENAMES[route_type]
@@ -272,6 +276,7 @@ async def handle_log_rx(event):
         event.payload["transport_code"] = transport_code.hex()
 
     event.payload["path_len"] = path_len 
+    event.payload["path_hash_size"] = path_hash_size
     event.payload["path"] = path
 
     event.payload["pkt_payload"] = pkt_payload.hex()
@@ -306,7 +311,7 @@ async def handle_log_rx(event):
 
             if chan_name != "" :
                 width = os.get_terminal_size().columns
-                cars = width - 13 - 2 * path_len - len(chan_name) - 1
+                cars = width - 13 - len(path) - len(chan_name) - 1
                 dispmsg = message.replace("\n","")[0:cars]
                 txt = f"{ANSI_LIGHT_GRAY}{chan_name} {ANSI_DGREEN}{dispmsg+(cars-len(dispmsg))*' '} {ANSI_YELLOW}[{path}]{ANSI_LIGHT_GRAY}{event.payload['snr']:6,.2f}{event.payload['rssi']:4}{ANSI_END}"
                 if handle_message.above:
