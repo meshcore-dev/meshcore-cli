@@ -2746,13 +2746,14 @@ async def next_cmd(mc, cmds, json_output=False):
             case "trace" | "tr":
                 argnum = 1
                 path = cmds[1]
-                plen = int(len(path)/2)
-                if plen > 1 and path.count(",") == 0:
-                    path = cmds[1][0:2]
-                    for i in range(1, plen):
-                        path = path + "," + cmds[1][2*i:2*i+2]
+                flags = None # by default compute flags from path (when comma separated)
+                if not "," in path:
+                    if ":" in path:
+                        flags = int(path.split(":")[1])
+                        path = path.split(":")[0]
+                    path = bytes.fromhex(path) # we can directly send a bytes
 
-                res = await mc.commands.send_trace(path=path)
+                res = await mc.commands.send_trace(path=path, flags=flags)
                 if res and res.type != EventType.ERROR:
                     tag= int.from_bytes(res.payload['expected_ack'], byteorder="little")
                     timeout = res.payload["suggested_timeout"] / 1000 * 1.2
