@@ -1827,7 +1827,12 @@ async def print_trace_to (mc, contact):
         return
 
     if path_hash_len == 3:
-        logger.error("Can't do trace when path_hash_len is 3")
+        # will request a path with hash_len = 2
+        path_hash_len = 2
+        new_path = ""
+        for i in range(0, path_len):
+            new_path = new_path + path[6*(path_len-i-1):6*(path_len-i-1)+4]
+        path = new_path
 
     if contact["type"] == 2 or contact["type"] == 3:
         # repeater or room, can trace to the contact itself
@@ -1837,7 +1842,7 @@ async def print_trace_to (mc, contact):
         elem = path[2*path_hash_len*(path_len-i-1):2*path_hash_len*(path_len-i)]
         trace = elem if trace=="" else f"{elem}{trace}{elem}"
 
-    if path_hash_len == 2:
+    if path_hash_len >= 2:
         trace = trace + ":1"
 
     await next_cmd(mc, ["trace", trace])
