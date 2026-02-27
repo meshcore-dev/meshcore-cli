@@ -1819,19 +1819,26 @@ async def get_channels (mc, anim=False) :
 async def print_trace_to (mc, contact):
     path = contact["out_path"]
     path_len = contact["out_path_len"]
+    path_hash_len = await mc.commands.get_path_hash_mode() + 1
     trace = ""
 
     if path_len == -1:
         print ("No path to destination")
         return
 
+    if path_hash_len == 3:
+        logger.error("Can't do trace when path_hash_len is 3")
+
     if contact["type"] == 2 or contact["type"] == 3:
         # repeater or room, can trace to the contact itself
-        trace = contact["public_key"][0:2]
+        trace = contact["public_key"][0:2*path_hash_len]
 
     for i in range(0, path_len):
-        elem = path[2*(path_len-i-1):2*(path_len-i)]
-        trace = elem if trace=="" else f"{elem},{trace},{elem}"
+        elem = path[2*path_hash_len*(path_len-i-1):2*path_hash_len*(path_len-i)]
+        trace = elem if trace=="" else f"{elem}{trace}{elem}"
+
+    if path_hash_len == 2:
+        trace = trace + ":1"
 
     await next_cmd(mc, ["trace", trace])
 
