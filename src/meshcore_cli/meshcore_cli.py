@@ -1138,7 +1138,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                         dest_scope = contact_name.split("%")[-1]
                         contact_name = contact_name[:-len(dest_scope)-1]
                         await set_scope (mc, dest_scope)
-                    tct = mc.get_contact_from_arg(mc, contact_name)
+                    tct = await get_contact_from_arg(mc, contact_name)
                     if tct is None:
                         print(f"{contact_name} is not a contact")
                     else:
