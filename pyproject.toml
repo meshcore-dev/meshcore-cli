@@ -20,8 +20,7 @@ license-files = ["LICEN[CS]E*"]
 dependencies = [ "meshcore >= 2.2.15",
 				 "bleak >= 0.22", 
 				 "prompt_toolkit >= 3.0.50", 
-				 "requests >= 2.28.0", 
-				 "pycryptodome" ]
+				 "requests >= 2.28.0" ]
 
 [project.urls]
 Homepage = "https://github.com/fdlamotte/meshcore-cli"
