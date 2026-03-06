@@ -924,7 +924,13 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                     if contact["out_path_len"] == 0:
                         prompt = prompt + f"|0"
                     else:
-                        prompt = prompt + "|" + contact["out_path"]
+                        path = contact['out_path']
+                        plen = contact['out_path_len']
+                        phs = contact['out_path_hash_mode'] + 1
+                        path_str = path[:2]
+                        for i in range(1,plen):
+                            path_str = path_str + path[i*phs*2:i*2*phs+2]
+                        prompt = prompt + "|" + path_str
 
                 if classic :
                     prompt = prompt + f"{ANSI_NORMAL}>"
@@ -3927,6 +3933,8 @@ If you want to set the path for a node through 112233 445566 778899, you can use
  - 112233445566778899:2 or 112233,445566,778899 for three byte hash
 
 To set an empty path use 0.
+
+Note that the path shown on the prompt only uses 1 byte notation without commas to keep it slim.
 
 """)
     else:
