@@ -271,7 +271,7 @@ async def handle_log_rx(event):
             if "adv_name" in event.payload:
                 adv_name = event.payload["adv_name"]
             else:
-                # try to get the name from the contact 
+                # try to get the name from the contact
                 ct = handle_log_rx.mc.get_contact_by_key_prefix(adv_key)
                 if ct is None:
                     adv_name = adv_key[0:12]
@@ -638,6 +638,9 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
         "?set_channel":None,
         "?add_channel":None,
         "?remove_channel":None,
+        "?path":None,
+        "?change_path":None,
+        "?trace":None,
     }
 
     contact_completion_list = {
@@ -1204,7 +1207,13 @@ async def process_contact_chat_line(mc, contact, line):
         elif contact['out_path_len'] == 0:
             print("0 hop", end="")
         else:
-            print(contact['out_path'],end="")
+            plen = contact['out_path_len']
+            phs = contact['out_path_hash_mode']+1
+            path_str_in = contact['out_path']
+            path_str = path_str_in[:2*phs]
+            for i in range(1,plen):
+                path_str = path_str + "," + path_str_in[i*phs*2:(i+1)*2*phs]
+            print(f"{path_str}",end="")
         if " " in line:
             print(" ", end="", flush=True)
             secline = line.split(" ", 1)[1]
@@ -2800,7 +2809,7 @@ async def next_cmd(mc, cmds, json_output=False):
                         print(json.dumps(res.payload))
                     else:
                         print("Logout ok")
-    
+
             case "contact_timeout" :
                 argnum = 2
                 contact = await get_contact_from_arg(mc, cmds[1])
@@ -2945,7 +2954,7 @@ async def next_cmd(mc, cmds, json_output=False):
                             if res["owner"] == "":
                                 print(f"{res['name']} has no owner set")
                             else:
-                                print(f"{res['name']} is owned by {res['owner']}") 
+                                print(f"{res['name']} is owned by {res['owner']}")
 
             case "req_clock":
                 argnum = 1
@@ -3108,7 +3117,7 @@ async def next_cmd(mc, cmds, json_output=False):
                                     name = f"{name:20}"
                                 else:
                                     name = f"[{n['pubkey']}]"
-    
+
                                 t_s = n['secs_ago']
                                 time_ago = f"{t_s}s"
                                 if t_s / 86400 >= 1 : # result in days
@@ -3151,7 +3160,13 @@ async def next_cmd(mc, cmds, json_output=False):
                         elif c[1]['out_path_len'] == 0:
                             path_str = "0 hop"
                         else:
-                            path_str = f"{c[1]['out_path']}"
+                            phs = c[1]['out_path_hash_mode'] + 1
+                            plen = c[1]['out_path_len']
+                            path_str_in = c[1]['out_path']
+                            path_str = path_str_in[:2*phs]
+                            for i in range(1,plen):
+                                path_str = path_str + "," + path_str_in[i*phs*2:(i+1)*2*phs]
+                            #path_str = f"{c[1]['out_path']}:{c[1]['out_path_hash_mode']}"
                         print(f"{c[1]['adv_name']:30} {CONTACT_TYPENAMES[c[1]['type']]:4}  {c[1]['public_key'][:12]}  {path_str}")
                     print(f"> {len(mc.contacts)} contacts in device")
 
@@ -3213,6 +3228,7 @@ async def next_cmd(mc, cmds, json_output=False):
                     path_len = contact["out_path_len"]
                     if json_output :
                         print(json.dumps({"adv_name" : contact["adv_name"],
+                                          "out_path_hash_len" : contact["out_path_hash_len"],
                                           "out_path_len" : path_len,
                                           "out_path" : path}))
                     else:
@@ -3221,7 +3237,11 @@ async def next_cmd(mc, cmds, json_output=False):
                         elif (path_len == -1) :
                             print("Flood")
                         else:
-                            print(path)
+                            phs = contact['out_path_hash_mode']+1
+                            path_str = path[:2*phs]
+                            for i in range(1,path_len):
+                                path_str = path_str + "," + path[i*phs*2:(i+1)*2*phs]
+                            print(path_str)
 
             case "contact_info" | "ci":
                 argnum = 1
@@ -3250,7 +3270,7 @@ async def next_cmd(mc, cmds, json_output=False):
                     elif "," in path and not ":" in path: # deduce path_hash_size from first hash
                         path_hash_size = int(len(path.split(",")[0])/2)
                         path = path + f":{path_hash_size-1}"
-                    path = path.replace(",","") 
+                    path = path.replace(",","")
                     try:
                         res = await mc.commands.change_contact_path(contact, path)
                         logger.debug(res)
@@ -3740,7 +3760,7 @@ def get_help_for (cmdname, context="line") :
     name <name>                 : node name
     lat <lat>                   : latitude
     lon <lon>                   : longitude
-    private_key                 : private key 
+    private_key                 : private key
     coords <lat,lon>            : coordinates
     multi_ack <on/off>          : multi-acks feature
     telemetry_mode_base <mode>  : set basic telemetry mode all/selected/off
@@ -3749,8 +3769,8 @@ def get_help_for (cmdname, context="line") :
     advert_loc_policy <policy>  : "share" means loc will be shared in adv
     manual_add_contacts <on/off>: let user manually add contacts to device
       - when off device automatically adds contacts from adverts
-      - when on contacts must be added manually using add_pending 
-        (pending contacts list is built by meshcli from adverts while connected) 
+      - when on contacts must be added manually using add_pending
+        (pending contacts list is built by meshcli from adverts while connected)
     autoadd_config              : set autoadd_config flags (see ?autoadd)
     path_hash_mode <value>
   display:
@@ -3845,6 +3865,70 @@ There is a special case for auto channels, which starts with a #, these have alw
 To remove a channel, use remove_channel, either with channel name or number.
 """)
 
+    elif cmdname == "trace" or cmdname == "tr" :
+        print("""Trace
+
+Trace is a command used to get signal information (SNR) along a path. 
+
+Basic call to trace takes the path to follow as an argument, specifying each repeater along the path with its hash (separated or not with a comma).
+
+Example:
+
+Track-R|*> trace 6a61
+ →13.25→[6a]→12.50→[61]→13.50→
+
+At the begining hashes were only 1 byte long. But with firmware after 1.12 you can use multi byte paths (2 bytes long and 4 bytes long hashes). The flag specifying the size of the hashes will either be guessed from the size of the tokens when used with commas, or specified using a colon (0: 1 byte, 1: 2 bytes, 3: 4 bytes), so AAAA,BBBB or AAAABBBB:1 are equivalent. When there is only one repeater on the path, you can put a comma at the end of the path to get the hash size right.
+
+Here are some examples :
+
+Track-R|*> trace 6a,61
+ →13.25→[6a]→12.50→[61]→13.50→
+Track-R|*> trace 6a61:0
+ →13.25→[6a]→12.50→[61]→13.50→
+Track-R|*> trace 6a83,6144
+ →11.75→[6a83]→12.25→[6144]→13.00→
+Track-R|*> trace 6a836144:1
+ →12.00→[6a83]→12.00→[6144]→13.75→
+Track-R|*> trace 6a83,
+ →13.25→[6a83]→13.50→
+Track-R|*> trace 6a83:1
+ →12.75→[6a83]→12.50→
+Track-R|*>
+
+You can also send a trace with a node as parameter, it will (if path to that node is set) use the outgoing path for outgoing and incoming path. If destination is a repeater the trace will be done to the destination, or else to the last repeater of the path.
+
+Track-R/SDQ_FdL_Rep|6a83> trace
+ →12.25→[6a83]→12.00→[6144]→12.00→[6a83]→12.00→
+
+In this case, the repeater had a path configured with 2 bytes hash, so it did a two bytes trace, going to the repeater and then coming back.
+
+See also ?path
+
+""")
+
+    elif "path" in cmdname :
+        print("""path management (reset_path, change_path)
+
+In Meshcore, there are two ways for a packet to reach a destination, flood or path. Flood messages are send through the mesh and will be repeated once by each repeater along the way (building a path in the packet, so the destination knows where the packet came from). Path message have a path encoded in them, each repeater along the way will repeat the packet and remove its own hash from the path (once at the destination, path is empty).
+
+The path for each contact is stored in the contact information, along with the path len and the path_hash_mode (specifying if its hash is 1, 2 or 3 bytes long. 0 for 1, 1 for 2 and 2 for 3).  A path len of 255 (or -1 if signed) means path is not set (flood).
+
+meshcore-cli provides some functions to manage path :
+ * path         : print path to a node
+ * reset_path   : set path back to flood
+ * change_path  : specify path to destination
+ * contact_info : get all information for a contact
+
+When using change_path, you specify manually the path to the contact. Path is given as an hex string containing hashes for all repeaters in the way (you can use commas to separate hashes). By default hash_size will be the one of the node. If using commas, it will be guessed from first hash. You can also use a colon to specify path_hash_mode. 
+
+If you want to set the path for a node through 112233 445566 778899, you can use 
+ - 114477:0 or 11,44,77 for one byte hash
+ - 112244557788:1 or 1122,4455,7788 for two byte hash
+ - 112233445566778899:2 or 112233,445566,778899 for three byte hash
+
+To set an empty path use 0.
+
+""")
     else:
         print(f"Sorry, no help yet for {cmdname}")
 
@@ -3998,7 +4082,7 @@ async def prompt_for_file():
     path_completer = PathCompleter(expanduser=True)
 
     file_path = await file_session.prompt_async(
-        "Enter filename (Tab to complete CTRL+C to cancel): ", 
+        "Enter filename (Tab to complete CTRL+C to cancel): ",
         completer=path_completer,
         complete_while_typing=False,
         key_bindings=bindings
@@ -4400,7 +4484,7 @@ async def main(argv):
             logger.error("Repeater mode (-r) requires serial port (-s)")
             command_usage()
             return
-        
+
         ser = await setup_repeater_serial(serial_port, baudrate)
 
         logger.debug(f"Serial port opened: {ser}")
@@ -4438,7 +4522,7 @@ async def main(argv):
                 print("BLE connection asked (default behaviour), but no BLE HW found")
                 print("Call meshcore-cli with -h for some more help (on commands)")
                 command_usage()
-                return            
+                return
 
             found = False
             for d in devices:
@@ -4465,7 +4549,7 @@ async def main(argv):
             print("BLE connection asked (default behaviour), but no BLE HW found")
             print("Call meshcore-cli with -h for some more help (on commands)")
             command_usage()
-            return            
+            return
         except ConnectionError :
             logger.info("Error while connecting, retrying once ...")
             if first_device :
