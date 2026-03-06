@@ -204,6 +204,42 @@ This feature only really works in interactive mode.
 
 Note: There is also an `auto_update_contacts` setting that has nothing to do with adding contacts, it permits to automatically sync contact lists between device and meshcore-cli (when there is an update in name, location or path).
 
+### LED Control
+
+The BLE and status LEDs on companion devices can be controlled using the `set` and `get` commands.
+
+#### BLE LED (`led_ble_mode`)
+
+Controls the BLE connection indicator LED.
+
+| Value | Behavior |
+|-------|----------|
+| 0 | Normal: blinks when disconnected, solid when connected |
+| 1 | Blinks only when disconnected from BLE |
+| 2 | Solid only when connected to BLE |
+| 3 | Disabled |
+
+```
+set led_ble_mode 1
+get led_ble_mode
+```
+
+#### Status LED (`led_status_mode`)
+
+Controls the status LED blinking.
+
+| Value | Behavior |
+|-------|----------|
+| 0 | Enabled (normal blinking) |
+| 1 | Disabled |
+
+```
+set led_status_mode 1
+get led_status_mode
+```
+
+Note: LED settings are persisted to the device and require a reboot to take effect.
+
 ### Issuing batch commands to contacts with apply to
 
 `apply_to <f> <cmd>` : applies cmd to contacts matching filter `<f>` it can be used to apply the same command to a pool of repeaters, or remove some contacts matching a condition.

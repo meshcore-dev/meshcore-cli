@@ -579,6 +579,8 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "max_flood_attempts" : None,
             "flood_after" : None,
             "path_hash_mode": None,
+            "led_ble_mode": None,
+            "led_status_mode": None,
         },
         "get" : {"name":None,
             "bat":None,
@@ -620,6 +622,8 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "stats_packets":None,
             "allowed_repeat_freq":None,
             "path_hash_mode":None,
+            "led_ble_mode":None,
+            "led_status_mode":None,
         },
         "?get":None,
         "?set":None,
@@ -2055,6 +2059,30 @@ async def next_cmd(mc, cmds, json_output=False):
                                 print(json.dumps(res.payload, indent=4))
                             else:
                                 print("ok")
+                    case "led_ble_mode":
+                        mode = int(cmds[2])
+                        if mode < 0 or mode > 3:
+                            logger.error("led_ble_mode must be 0-3 (0=enabled, 1=disconn_only, 2=conn_only, 3=disabled)")
+                        else:
+                            res = await mc.commands.set_led_ble_mode(mode)
+                            if res.type == EventType.ERROR:
+                                print(f"Error: {res}")
+                            elif json_output:
+                                print(json.dumps(res.payload, indent=4))
+                            else:
+                                print("ok")
+                    case "led_status_mode":
+                        mode = int(cmds[2])
+                        if mode < 0 or mode > 1:
+                            logger.error("led_status_mode must be 0-1 (0=enabled, 1=disabled)")
+                        else:
+                            res = await mc.commands.set_led_status_mode(mode)
+                            if res.type == EventType.ERROR:
+                                print(f"Error: {res}")
+                            elif json_output:
+                                print(json.dumps(res.payload, indent=4))
+                            else:
+                                print("ok")
                     case "name":
                         res = await mc.commands.set_name(cmds[2])
                         logger.debug(res)
@@ -2378,6 +2406,30 @@ async def next_cmd(mc, cmds, json_output=False):
                         else :
                             if "path_hash_mode" in res.payload :
                                 print(f"{res.payload['path_hash_mode']}")
+                            else:
+                                print("Not available")
+                    case "led_ble_mode":
+                        res = await mc.commands.send_device_query()
+                        logger.debug(res)
+                        if res.type == EventType.ERROR :
+                            print(f"ERROR: {res}")
+                        elif json_output :
+                            print(json.dumps(res.payload, indent=4))
+                        else :
+                            if "led_ble_mode" in res.payload :
+                                print(f"{res.payload['led_ble_mode']}")
+                            else:
+                                print("Not available")
+                    case "led_status_mode":
+                        res = await mc.commands.send_device_query()
+                        logger.debug(res)
+                        if res.type == EventType.ERROR :
+                            print(f"ERROR: {res}")
+                        elif json_output :
+                            print(json.dumps(res.payload, indent=4))
+                        else :
+                            if "led_status_mode" in res.payload :
+                                print(f"{res.payload['led_status_mode']}")
                             else:
                                 print("Not available")
                     case "bat" :
@@ -3728,6 +3780,8 @@ def get_help_for (cmdname, context="line") :
     stats_packets      : packets stats (recv/sent/flood/direct)
     allowed_repeat_freq: possible frequency ranges for repeater mode
     path_hash_mode
+    led_ble_mode       : BLE LED mode (0-3)
+    led_status_mode    : status LED mode (0-1)
 """)
 
     elif cmdname == "set" :
@@ -3753,6 +3807,10 @@ def get_help_for (cmdname, context="line") :
         (pending contacts list is built by meshcli from adverts while connected) 
     autoadd_config              : set autoadd_config flags (see ?autoadd)
     path_hash_mode <value>
+    led_ble_mode <0-3>         : BLE LED behavior
+      0=normal, 1=disconn blink only, 2=conn solid only, 3=disabled
+    led_status_mode <0-1>      : status LED behavior
+      0=enabled (blinking), 1=disabled
   display:
     print_timestamp <on/off/fmt>: toggle printing of timestamp, can be strftime format
     print_snr <on/off>          : toggle snr display in messages
@@ -3882,6 +3940,7 @@ REPEATER_COMMANDS = {
         "bridge.channel": None, "bridge.secret": None, "bridge.type": None,
         "adc.multiplier": None, "acl": None,
         "owner.info": None,
+        "led.ble": None, "led.status": None,
     },
     "set": {
         "name": None, "radio": None, "tx": None, "freq": None,
@@ -3897,6 +3956,8 @@ REPEATER_COMMANDS = {
         "bridge.baud": None, "bridge.channel": None, "bridge.secret": None,
         "adc.multiplier": None,
         "owner.info": None,
+        "led.ble": None,
+        "led.status": None,
     },
     "powersaving": {"on":None, "off":None,},
     "password": None,
