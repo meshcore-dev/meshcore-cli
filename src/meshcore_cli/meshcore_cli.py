@@ -37,6 +37,7 @@ from meshcore import MeshCore, EventType, logger
 # Version
 VERSION = "v1.4.7"
 
+
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
 MCCLI_ADDRESS = MCCLI_CONFIG_DIR + "default_address"
@@ -262,14 +263,10 @@ async def handle_log_rx(event):
             signature = event.payload["signature"]
             flags = event.payload["adv_flags"]
             adv_type = event.payload["adv_type"]
-            if "adv_lat" in event.payload:
-                adv_lat = event.payload["adv_lat"]
-            if "adv_lon" in event.payload:
-                adv_lon = event.payload["adv_lon"]
-            if "adv_feat1" in event.payload:
-                adv_feat1 = event.payload["adv_feat1"]
-            if "adv_feat2" in event.payload:
-                adv_feat2 = event.payload["adv_feat2"]
+            adv_lat = event.payload["adv_lat"] if "adv_lat" in event.payload else None
+            adv_lon = event.payload["adv_lon"] if "adv_lon" in event.payload else None
+            adv_feat1 = event.payload["adv_feat1"] if "adv_feat1" in event.payload else None
+            adv_feat2 = event.payload["adv_feat2"] if "adv_feat2" in event.payload else None
 
             if "adv_name" in event.payload:
                 adv_name = event.payload["adv_name"]
