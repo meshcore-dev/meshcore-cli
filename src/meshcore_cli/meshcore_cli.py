@@ -3244,9 +3244,13 @@ async def next_cmd(mc, cmds, json_output=False):
                     else:
                         print(f"Unknown contact {cmds[1]}")
                 else:
-                    path = cmds[2].replace(",","") # we'll accept path with ,
+                    path = cmds[2]
                     if path == "0":
                         path = ""
+                    elif "," in path and not ":" in path: # deduce path_hash_size from first hash
+                        path_hash_size = int(len(path.split(",")[0])/2)
+                        path = path + f":{path_hash_size-1}"
+                    path = path.replace(",","") 
                     try:
                         res = await mc.commands.change_contact_path(contact, path)
                         logger.debug(res)
