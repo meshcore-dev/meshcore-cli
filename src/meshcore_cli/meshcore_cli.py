@@ -35,7 +35,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.4.9"
+VERSION = "v1.4.10"
 
 
 # default ble address is stored in a config file
@@ -517,6 +517,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
         "share_contact" : contact_list,
         "path": contact_list,
         "disc_path" : contact_list,
+        "advert_path" : contact_list | pending_list,
         "node_discover": {"all":None, "sens":None, "rep":None, "comp":None, "room":None, "cli":None},
         "trace" : None,
         "reset_path" : contact_list,
@@ -654,6 +655,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
         "upload_contact" : None,
         "path": None,
         "disc_path": None,
+        "advert_path": None,
         "trace": None,
         "dtrace": None,
         "reset_path" : None,
@@ -1274,6 +1276,7 @@ async def process_contact_chat_line(mc, contact, line):
             line.startswith("req_clock") or\
             line.startswith("req_acl") or line.startswith("ra") or\
             line.startswith("path") or\
+            line.startswith("advert_path") or line.startswith("ap") or\
             line.startswith("logout") :
         args = [line.split()[0], contact['adv_name']]
         await process_cmds(mc, args)
@@ -3322,6 +3325,34 @@ async def next_cmd(mc, cmds, json_output=False):
                         contact["out_path"] = ""
                         contact["out_path_len"] = -1
 
+            case "advert_path" | "ap":
+                argnum = 1
+                contact = await get_contact_from_arg(mc, cmds[1])
+                if contact is None: # search in pending contacts
+                    for c in mc.pending_contacts.items():
+                        if c[1]['adv_name'] == cmds[1] or \
+                            c[1]['public_key'].startswith(cmds[1]):
+                            contact = c[1]['public_key']
+                if contact is None:
+                    contact = cmds[1] # use input from user
+                res = await mc.commands.get_advert_path(contact)
+                logger.debug(res)
+                if res is None:
+                    logger.error("couldn't send cmd")
+                else:
+                    path_len = res.payload['path_len']
+                    if (path_len == 0) :
+                        print("0 hop")
+                    elif (path_len == -1) :
+                        print("Flood")
+                    else:
+                        phs = res.payload['path_hash_mode']+1
+                        path = res.payload['path']
+                        path_str = path[:2*phs]
+                        for i in range(1,path_len):
+                            path_str = path_str + "," + path[i*phs*2:(i+1)*2*phs]
+                        print(path_str)
+
             case "share_contact" | "sc":
                 argnum = 1
                 contact = await get_contact_from_arg(mc, cmds[1])
@@ -3414,7 +3445,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "remove_contact" :
                 argnum = 1
-                contact = mc.get_contact_by_name(cmds[1])
+                contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
                         print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
@@ -3644,6 +3675,7 @@ def command_help():
     disc_path <ct>         : discover new path and display          dp
     reset_path <ct>        : resets path to a contact to flood      rp
     change_path <ct> <pth> : change the path to a contact           cp
+    advert_path <key>      : get path from advert                   ap
     change_flags <ct> <f>  : change contact flags (tel_l|tel_a|star)cf
     req_acl <ct>           : requests access control list for node  ra
     req_telemetry <ct>     : prints telemetry data as json          rt
@@ -3924,6 +3956,8 @@ meshcore-cli provides some functions to manage path :
  * reset_path   : set path back to flood
  * change_path  : specify path to destination
  * contact_info : get all information for a contact
+ * advert_path  : path taken by an advert
+ * disc_path    : discover in and out path for a contact
 
 When using change_path, you specify manually the path to the contact. Path is given as an hex string containing hashes for all repeaters in the way (you can use commas to separate hashes). By default hash_size will be the one of the node. If using commas, it will be guessed from first hash. You can also use a colon to specify path_hash_mode. 
 
@@ -3933,6 +3967,11 @@ If you want to set the path for a node through 112233 445566 778899, you can use
  - 112233445566778899:2 or 112233,445566,778899 for three byte hash
 
 To set an empty path use 0.
+
+To get the path for a contact, you can use three commands:
+ - path will gives you the path stored in the node. 
+ - You can also get a path from a key using advert_path which will give you the path taken for last advert from that node to come.
+ disc_path will send a path request and give you input and output path for a node.
 
 Note that the path shown on the prompt only uses 1 byte notation without commas to keep it slim.
 
