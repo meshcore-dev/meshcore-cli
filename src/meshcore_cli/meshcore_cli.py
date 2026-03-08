@@ -35,7 +35,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.4.11"
+VERSION = "v1.4.12"
 
 
 # default ble address is stored in a config file
