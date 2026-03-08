@@ -35,7 +35,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.4.10"
+VERSION = "v1.4.11"
 
 
 # default ble address is stored in a config file
@@ -3339,19 +3339,24 @@ async def next_cmd(mc, cmds, json_output=False):
                 logger.debug(res)
                 if res is None:
                     logger.error("couldn't send cmd")
+                elif res.type == EventType.ERROR:
+                    print(res)
                 else:
-                    path_len = res.payload['path_len']
-                    if (path_len == 0) :
-                        print("0 hop")
-                    elif (path_len == -1) :
-                        print("Flood")
-                    else:
-                        phs = res.payload['path_hash_mode']+1
-                        path = res.payload['path']
-                        path_str = path[:2*phs]
-                        for i in range(1,path_len):
-                            path_str = path_str + "," + path[i*phs*2:(i+1)*2*phs]
-                        print(path_str)
+                    if json_output:
+                        print(json.dumps(res.payload))
+                    else : 
+                        path_len = res.payload['path_len']
+                        if (path_len == 0) :
+                            print("0 hop")
+                        elif (path_len == -1) :
+                            print("Flood")
+                        else:
+                            phs = res.payload['path_hash_mode']+1
+                            path = res.payload['path']
+                            path_str = path[:2*phs]
+                            for i in range(1,path_len):
+                                path_str = path_str + "," + path[i*phs*2:(i+1)*2*phs]
+                            print(path_str)
 
             case "share_contact" | "sc":
                 argnum = 1
