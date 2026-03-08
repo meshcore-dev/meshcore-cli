@@ -3087,14 +3087,14 @@ async def next_cmd(mc, cmds, json_output=False):
                             print(json.dumps(res, indent=4))
                         else:
                             for e in res:
-                                name = e['key']
+                                name = f" [{e['key']}] "
                                 ct = mc.get_contact_by_key_prefix(e['key'])
                                 if ct is None:
                                     if mc.self_info["public_key"].startswith(e['key']):
-                                        name = f"{'self':<20} [{e['key']}]"
+                                        name += f"self"
                                 else:
-                                    name = f"{ct['adv_name']:<20} [{e['key']}]"
-                                print(f"{name:{' '}<35}: {e['perm']:02x}")
+                                    name += f"{ct['adv_name']}"
+                                print(f"{name}{ANSI_START}42G: {e['perm']:02x}")
 
             case "req_neighbours"|"rn" :
                 argnum = 1
@@ -3122,12 +3122,14 @@ async def next_cmd(mc, cmds, json_output=False):
                                 ct = mc.get_contact_by_key_prefix(n["pubkey"])
                                 if ct and width > 60 :
                                     name = f"[{n['pubkey'][0:8]}] {ct['adv_name']}"
-                                    name = f"{name:30}"
+                                    name = f"{name:30}{ANSI_START}31G"
                                 elif ct :
                                     name = f"{ct['adv_name']}"
-                                    name = f"{name:20}"
+                                    name = f"{name:20}{ANSI_START}21G"
+                                elif width > 60:
+                                    name = f"[{n['pubkey']}]{ANSI_START}31G"
                                 else:
-                                    name = f"[{n['pubkey']}]"
+                                    name = f"[{n['pubkey']}]{ANSI_START}21G"
 
                                 t_s = n['secs_ago']
                                 time_ago = f"{t_s}s"
