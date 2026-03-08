@@ -85,6 +85,8 @@ ANSI_BORANGE="\033[1;38;5;214m"
 ANSI_YELLOW = "\033[0;33m"
 ANSI_BYELLOW = "\033[1;33m"
 
+ANSI_START = "\033["
+
 #Unicode chars
 # some possible symbols for prompts 🭬🬛🬗🭬🬛🬃🬗🭬🬛🬃🬗🬏🭀🭋🭨🮋
 ARROW_HEAD = ""
@@ -3176,7 +3178,10 @@ async def next_cmd(mc, cmds, json_output=False):
                             for i in range(1,plen):
                                 path_str = path_str + "," + path_str_in[i*phs*2:(i+1)*2*phs]
                             #path_str = f"{c[1]['out_path']}:{c[1]['out_path_hash_mode']}"
-                        print(f"{c[1]['adv_name']:30} {CONTACT_TYPENAMES[c[1]['type']]:4}  {c[1]['public_key'][:12]}  {path_str}")
+                        print(f"{c[1]['adv_name']:30} ", end="", flush=True)
+                        print(f"{ANSI_START}34G", end="", flush=True)
+                        print(f"{CONTACT_TYPENAMES[c[1]['type']]:4}  ", end="", flush=True)
+                        print(f"{c[1]['public_key'][:12]}  {path_str}")
                     print(f"> {len(mc.contacts)} contacts in device")
 
             case "reload_contacts" | "rc":
