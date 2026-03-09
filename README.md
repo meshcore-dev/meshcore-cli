@@ -1,6 +1,6 @@
 # meshcore-cli
 
-meshcore-cli : CLI interface to MeschCore companion app over BLE, TCP or Serial
+meshcore-cli : CLI interface to MeshCore companion app over BLE, TCP or Serial
 
 ## About
 
@@ -44,11 +44,11 @@ If using BLE, don't forget to pair your device first (using `bluetoothctl` for i
 
 Configuration files are stored in `$HOME/.config/meshcore`
 
-If the directory exists, default ble address and history will be stored there.
+If the directory exists, default BLE address and history will be stored there.
 
 If there is an initialization script file called `init`, it will be executed just before the commands provided on command line are executed (and after evaluation of the arguments).
 
-Init files can also be defined for a given device, meshcore-cli will look for `&lt;device-name>.init` file in configuration directory (usefull to specify timeout for contacts that are behind bridges with `contact_timeout` command).
+Init files can also be defined for a given device, meshcore-cli will look for `<device-name>.init` file in configuration directory (usefull to specify timeout for contacts that are behind bridges with `contact_timeout` command).
 
 ### Arguments
 
