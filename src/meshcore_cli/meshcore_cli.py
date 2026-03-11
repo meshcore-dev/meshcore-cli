@@ -4661,7 +4661,7 @@ async def main(argv):
     mc.subscribe(EventType.RX_LOG_DATA, handle_log_rx)
 
     mc.auto_update_contacts = True
-    mc.set_decrypt_channel_logs = True
+    mc.set_decrypt_channel_logs(True)
 
     res = await mc.commands.send_device_query()
     if res.type == EventType.ERROR :
