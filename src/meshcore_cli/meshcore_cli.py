@@ -1215,6 +1215,19 @@ async def process_contact_chat_line(mc, contact, line):
             print("")
         return True
 
+    if line.startswith("contact_lastmod"):
+        timestamp = contact["lastmod"]
+        print(f"{contact['adv_name']} updated"
+              f" {datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d at %H:%M:%S')}"
+              f" ({timestamp})", end="")
+        if " " in line:
+            print(" ", end="", flush=True)
+            secline = line.split(" ", 1)[1]
+            await process_contact_chat_line(mc,contact, secline)
+        else:
+            print("")
+        return True
+
     if line.startswith("path") :
         if contact['out_path_len'] == -1:
             print("Flood", end="")
@@ -1257,13 +1270,6 @@ async def process_contact_chat_line(mc, contact, line):
         # will sleep after executed command if there is a command
         await asyncio.sleep(sleeptime)
 
-        return True
-
-    if line == "contact_lastmod":
-        timestamp = contact["lastmod"]
-        print(f"{contact['adv_name']} updated"
-              f" {datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d at %H:%M:%S')}"
-              f" ({timestamp})")
         return True
 
     # commands that take contact as second arg will be sent to recipient
