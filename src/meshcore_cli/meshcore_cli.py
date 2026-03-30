@@ -35,7 +35,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.5.4"
+VERSION = "v1.5.5"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -2614,7 +2614,7 @@ async def next_cmd(mc, cmds, json_output=False):
                 elif len(cmds[2]) != 32:
                     res = None
                 else:
-                    res = await set_channel(mc, "", cmds[1], bytes.fromhex(cmds[3]))
+                    res = await set_channel(mc, "", cmds[1], bytes.fromhex(cmds[2]))
                 if res is None:
                     print("Error adding channel")
 

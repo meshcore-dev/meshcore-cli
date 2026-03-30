@@ -17,12 +17,12 @@
 
         meshcore = python3Packages.buildPythonPackage rec {
           pname = "meshcore";
-          version = "2.3.2";
+          version = "2.3.5";
           pyproject = true;
 
           src = python3Packages.fetchPypi {
             inherit pname version;
-            sha256 = "sha256-mM64woqKvltbd/CUGzD5m6PU/CNQ923pm2yKTneNrW8=";
+            sha256 = "sha256-EUK0iFaCN2tpOL3XL2ejVLGz/gLTdvzPpvgBxETLL3w=";
           };
 
           build-system = [ python3Packages.hatchling ];
