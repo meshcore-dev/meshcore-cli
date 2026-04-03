@@ -3281,6 +3281,30 @@ async def next_cmd(mc, cmds, json_output=False):
                 else:
                     print(json.dumps(contact, indent=4))
 
+            case "add_contact" :
+                argnum = 3 # key type name
+                contact = {
+                    "public_key": cmds[1],
+                    "type" : int (cmds[2]),
+                    "flags" : 0,
+                    "out_path_len" : 0,
+                    "out_path" : "",
+                    "out_path_hash_mode" : 0,
+                    "adv_name" : cmds[3],
+                    "adv_lat" : 0,
+                    "adv_lon" : 0,
+                    "last_advert" : 0,
+                }
+                try:
+                    res = await mc.commands.update_contact(contact)
+                    logger.debug(res)
+                    if res.type == EventType.ERROR:
+                        print(f"Error adding contact: {res}")
+                    elif json_output :
+                        print(json.dumps(res.payload, indent=4))
+                except ValueError:
+                    print(f"Error ! Command format add_contact key type namez")
+
             case "change_path" | "cp":
                 argnum = 2
                 contact = await get_contact_from_arg(mc, cmds[1])
