@@ -1809,16 +1809,12 @@ async def print_trace_to (mc, contact):
 
 async def discover_path(mc, contact):
     await mc.ensure_contacts()
-    res = await mc.commands.send_path_discovery(contact)
-    if res.type == EventType.ERROR:
-        return None
-    else:
-        timeout = res.payload["suggested_timeout"]/600 if not "timeout" in contact or contact['timeout']==0 else contact["timeout"]
-        res = await mc.wait_for_event(EventType.PATH_RESPONSE, timeout=timeout)
-        if res is None:
-            return {"error": "timeout"}
-        else :
-            return res.payload
+    timeout = 0 if not "timeout" in contact else contact["timeout"]
+    res = await mc.commands.send_path_discovery_sync(contact, timeout)
+    if res is None:
+        return {"error": "timeout"}
+    else :
+        return res.payload
 
 async def print_disc_trace_to (mc, contact):
     p = await discover_path(mc, contact)
@@ -2789,29 +2785,21 @@ async def next_cmd(mc, cmds, json_output=False):
                         sess = PromptSession("Password: ", is_password=True)
                         password = await sess.prompt_async()
 
-                    res = await mc.commands.send_login(contact, password)
+                    timeout = 0 if not "timeout" in contact else contact["timeout"] 
+                    res = await mc.commands.send_login_sync(contact, password, timeout = timeout)
                     logger.debug(res)
-                    if res.type == EventType.ERROR:
-                        if json_output :
-                            print(json.dumps({"error" : "Error while login"}))
+                    if res is None:
+                        print("Login failed : Error or Timeout waiting response")
+                    elif json_output :
+                        if res.type == EventType.LOGIN_SUCCESS:
+                            print(json.dumps({"login_success" : True}, indent=4))
                         else:
-                            print(f"Error while loging: {res}")
-                    else: # should probably wait for the good ack
-                        timeout = res.payload["suggested_timeout"]/800 if not "timeout" in contact or contact['timeout']==0 else contact["timeout"]
-                        res = await mc.wait_for_event(EventType.LOGIN_SUCCESS, timeout=timeout)
-                        logger.debug(res)
-                        if res is None:
-                            print("Login failed : Timeout waiting response")
-                        elif json_output :
-                            if res.type == EventType.LOGIN_SUCCESS:
-                                print(json.dumps({"login_success" : True}, indent=4))
-                            else:
-                                print(json.dumps({"login_success" : False, "error" : "login failed"}, indent=4))
+                            print(json.dumps({"login_success" : False, "error" : "login failed"}, indent=4))
+                    else:
+                        if res.type == EventType.LOGIN_SUCCESS:
+                            print("Login success")
                         else:
-                            if res.type == EventType.LOGIN_SUCCESS:
-                                print("Login success")
-                            else:
-                                print("Login failed")
+                            print("Login failed")
 
             case "logout" :
                 argnum = 1
