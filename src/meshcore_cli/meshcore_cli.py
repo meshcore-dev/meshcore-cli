@@ -24,6 +24,7 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.shortcuts import radiolist_dialog
 from prompt_toolkit.completion.word_completer import WordCompleter
 from prompt_toolkit.document import Document
+from prompt_toolkit.utils import get_cwidth
 
 try:
     from bleak import BleakScanner, BleakClient
@@ -99,6 +100,19 @@ INVERT_SLASH = False
 def escape_ansi(line):
     ansi_escape = re.compile(r'(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]')
     return ansi_escape.sub('', line)
+
+def truncate_to_display_width(text, max_width):
+    """Return the longest prefix of text whose terminal display width is <= max_width."""
+    if max_width <= 0:
+        return ""
+    lo, hi = 0, len(text)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if get_cwidth(text[:mid]) <= max_width:
+            lo = mid
+        else:
+            hi = mid - 1
+    return text[:lo]
 
 def print_one_line_above(text):
     """Status line(s) above the prompt; delegates to print_above."""
@@ -270,9 +284,30 @@ async def handle_log_rx(event):
 
             if chan_name != "" :
                 width = os.get_terminal_size().columns
-                cars = width - 13 - len(event.payload["path"]) - len(chan_name) - 1
-                dispmsg = message.replace("\n","")[0:cars]
-                txt = f"{ANSI_LIGHT_GRAY}{chan_name} {ANSI_DGREEN}{dispmsg+(cars-len(dispmsg))*' '} {ANSI_START}{width-11-len(event.payload['path'])}G{ANSI_YELLOW}[{event.payload['path']}]{ANSI_LIGHT_GRAY}{event.payload['snr']:6,.2f}{event.payload['rssi']:4}{ANSI_END}"
+                path = event.payload["path"]
+                snr_str = f"{event.payload['snr']:6,.2f}"
+                rssi_str = f"{event.payload['rssi']:4}"
+                rhs_plain = f"[{path}]{snr_str}{rssi_str}"
+                rhs_w = get_cwidth(rhs_plain)
+                rhs_col = max(1, width - rhs_w + 1)
+                prefix_plain = chan_name + " "
+                prefix_w = get_cwidth(prefix_plain)
+                trailing_before_csi_w = 1
+                max_msg_w = max(0, rhs_col - 1 - prefix_w - trailing_before_csi_w)
+                raw_msg = message.replace("\n", "")
+                dispmsg = truncate_to_display_width(raw_msg, max_msg_w)
+                while True:
+                    left_w = get_cwidth(prefix_plain + dispmsg + " ")
+                    if left_w >= rhs_col - 1:
+                        break
+                    nxt = dispmsg + " "
+                    if get_cwidth(prefix_plain + nxt + " ") > rhs_col - 1:
+                        break
+                    dispmsg = nxt
+                txt = (
+                    f"{ANSI_LIGHT_GRAY}{prefix_plain}{ANSI_DGREEN}{dispmsg} "
+                    f"{ANSI_START}{rhs_col}G{ANSI_YELLOW}[{path}]{ANSI_LIGHT_GRAY}{snr_str}{rssi_str}{ANSI_END}"
+                )
 
                 if handle_message.above:
                     print_above(txt)
