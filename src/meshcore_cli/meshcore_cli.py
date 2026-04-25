@@ -35,7 +35,7 @@ import re
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.5.5"
+VERSION = "v1.5.7"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
@@ -586,6 +586,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "max_flood_attempts" : None,
             "flood_after" : None,
             "path_hash_mode": None,
+            "default_scope": None,
         },
         "get" : {"name":None,
             "bat":None,
@@ -627,6 +628,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "stats_packets":None,
             "allowed_repeat_freq":None,
             "path_hash_mode":None,
+            "default_scope":None,
         },
         "?get":None,
         "?set":None,
@@ -2243,7 +2245,12 @@ async def next_cmd(mc, cmds, json_output=False):
                             print(f"Error : {res}")
                         else:
                             print(f"Policy for adv_loc: {policy}")
-
+                    case "default_scope":
+                        res = await mc.commands.set_default_flood_scope(cmds[2])
+                        if res.type == EventType.ERROR:
+                            print(f"Error : {res}")
+                        else:
+                            print("Default scope set")
                     case _: # custom var
                         if cmds[1].startswith("_") :
                             vname = cmds[1][1:]
@@ -2533,6 +2540,9 @@ async def next_cmd(mc, cmds, json_output=False):
                         print(json.dumps(stats, indent=4))
                     case "allowed_repeat_freq" :
                         res = await mc.commands.get_allowed_repeat_freq()
+                        print(json.dumps(res.payload))
+                    case "default_scope" :
+                        res = await mc.commands.get_default_flood_scope()
                         print(json.dumps(res.payload))
                     case _ :
                         res = await mc.commands.get_custom_vars()
@@ -3875,6 +3885,8 @@ Managing Flood Scope in interactive mode
     When entering chat mode, scope will be reset to *, meaning classic flood.
     You can switch scope using the scope command, or postfixing the to command with %<scope>.
     Scope can also be applied to a command using % before the scope name. For instance login%#Morbihan will limit diffusion of the login command (which is usually sent flood to get the path to a repeater) to the #Morbihan region.
+
+    default_scope for the device can be set/get by using set default_scope and get default_scope, if set, the scope will revert to this default.
 """)
 
     elif cmdname == "contact_info":
