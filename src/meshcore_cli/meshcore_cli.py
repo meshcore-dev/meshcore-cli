@@ -4,7 +4,8 @@
 """
 
 import asyncio
-import os, sys, io, platform
+import os, sys, io
+import unicodedata
 import time, datetime
 import getopt, json, shlex, re
 import logging
@@ -12,7 +13,6 @@ import requests
 import serial.tools.list_ports
 from pathlib import Path
 import traceback
-from prompt_toolkit.application.current import get_app_or_none
 from prompt_toolkit.shortcuts import PromptSession
 from prompt_toolkit.shortcuts import CompleteStyle
 from prompt_toolkit.shortcuts import print_formatted_text
@@ -101,6 +101,33 @@ def escape_ansi(line):
     ansi_escape = re.compile(r'(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]')
     return ansi_escape.sub('', line)
 
+def sanitize_prompt_display_text(text):
+    """
+    Prompt-only: strip fragments that confuse terminal vs wcwidth alignment (emoji,
+    wide punctuation/symbols) so prompt_toolkit cursor keys match the screen.
+
+    Do not use this for contact names in listings or completion — those must stay
+    identical to device strings (including emoji). Keep letters and numbers even
+    when east-asian width so names in common scripts still display in the prompt.
+    """
+    if not text:
+        return text
+    out = []
+    for ch in text:
+        try:
+            w = get_cwidth(ch)
+        except Exception:
+            w = 1
+        if w == 0:
+            out.append(ch)
+            continue
+        cat = unicodedata.category(ch)
+        if w > 1 and cat[0] not in ("L", "N"):
+            out.append("?")
+        else:
+            out.append(ch)
+    return "".join(out)
+
 def truncate_to_display_width(text, max_width):
     """Return the longest prefix of text whose terminal display width is <= max_width."""
     if max_width <= 0:
@@ -122,34 +149,17 @@ def print_above(text):
     """
     Show text above the current input line.
 
-    When prompt_toolkit has a running Application (interactive prompt), plain
-    print() and DEC save/restore fight the renderer — use print_formatted_text,
-    which suspends the UI, writes via the Output layer (UTF-8), and redraws.
+    When prompt_toolkit has a running Application, print_formatted_text suspends
+    the UI, writes via the Output layer (UTF-8), and redraws.
 
-    With no active app (scripts, pipes), use CSI save/move/clear/restore only.
+    With no active app (scripts, pipes), print the same way without cursor
+    gymnastics — no DEC save/restore or other in-place cursor moves, so output
+    is reliable under tmux and similar environments (lines may scroll instead
+    of overwriting rows above the prompt).
     """
     if text == "":
         return
-    if get_app_or_none() is not None:
-        print_formatted_text(ANSI(text), end="\n")
-        return
-    lines = text.split("\n")
-    n = len(lines)
-    chunks = ["\033[s", f"\033[{n}A"]
-    for i, line in enumerate(lines):
-        chunks.append("\033[1G\033[2K")
-        chunks.append(line)
-        if i < n - 1:
-            chunks.append("\033[B")
-    chunks.append("\033[u")
-    combined = "".join(chunks)
-    enc = getattr(sys.stdout, "encoding", None) or "utf-8"
-    try:
-        sys.stdout.buffer.write(combined.encode(enc, errors="replace"))
-        sys.stdout.buffer.flush()
-    except (AttributeError, TypeError):
-        sys.stdout.write(combined)
-        sys.stdout.flush()
+    print_formatted_text(ANSI(text), end="\n")
 
 async def process_event_message(mc, ev, json_output, end="\n", above=False):
     """ display incoming message """
@@ -491,8 +501,10 @@ async def subscribe_to_msgs(mc, json_output=False, above=False):
         CS = mc.subscribe(EventType.CHANNEL_MSG_RECV, handle_message)
     await mc.start_auto_message_fetching()
 
-# redefine get_completion to let user put symbols in first item
-# and handle navigating in path ...
+# NestedCompleter's default word regex only treats [a-zA-Z0-9_] as letters, so
+# names like "Alice"+emoji split into separate "words" and completion matches
+# only the trailing segment (wrong). WORD=True uses Vi "WORD" = run of
+# non-whitespace, so contact names and /slash paths complete as one token.
 class MyNestedCompleter(NestedCompleter):
     def get_completions( self, document, complete_event):
         txt = document.text_before_cursor.lstrip()
@@ -507,8 +519,7 @@ class MyNestedCompleter(NestedCompleter):
             else:
                 opts = self.options.keys()
             completer = WordCompleter(
-                opts, ignore_case=self.ignore_case,
-                pattern=re.compile(r"([a-zA-Z0-9_\\/\#\?]+|[^a-zA-Z0-9_\s\#\?]+)"))
+                opts, ignore_case=self.ignore_case, WORD=True)
             yield from completer.get_completions(document, complete_event)
         else: # normal behavior for remainder
             yield from super().get_completions(document, complete_event)
@@ -877,6 +888,26 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
     return completion_list
 make_completion_dict.custom_vars = {}
 
+def default_classic_prompt_from_env():
+    """
+    Default to the Powerline-style prompt (PUA glyphs like U+E0B0) when stdout
+    is UTF-8. Set MESHCLI_CLASSIC_PROMPT=1|true|on for the simple `>` prompt if
+    your font cannot render those glyphs. 0|false|off matches the default
+    (fancy). Non-UTF-8 stdout forces classic. In-session: `set classic_prompt
+    on` / -C for simple, `set classic_prompt off` for fancy.
+    """
+    o = os.environ.get("MESHCLI_CLASSIC_PROMPT", "").strip().lower()
+    if o in ("1", "true", "yes", "on"):
+        return True
+    if o in ("0", "false", "no", "off"):
+        return False
+
+    enc = (getattr(sys.stdout, "encoding", None) or "").lower()
+    if enc and "utf-8" not in enc and "utf8" not in enc:
+        return True
+
+    return False
+
 async def interactive_loop(mc, to=None) :
     print("""Interactive mode, most commands from terminal chat should work.
 Use \"to\" to select recipient, use Tab to complete name ...
@@ -938,10 +969,10 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                 prompt = f"{ANSI_INVERT}"
 
             prompt = prompt + f"{ANSI_BGRAY}"
-            prompt = prompt + f"{mc.self_info['name']}"
+            prompt = prompt + sanitize_prompt_display_text(mc.self_info["name"])
             if contact is None: # display scope
                 if not scope is None:
-                    prompt = prompt + f"|{scope}"
+                    prompt = prompt + "|" + sanitize_prompt_display_text(scope)
 
             if contact is None :
                 if classic :
@@ -975,12 +1006,12 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                     prompt = prompt + f"{SLASH_END}"
                     prompt = prompt + f"{ANSI_INVERT}"
 
-                prompt = prompt + f"{contact['adv_name']}"
+                prompt = prompt + sanitize_prompt_display_text(contact["adv_name"])
                 if contact["type"] == 0 or contact["out_path_len"]==-1:
                     if scope is None:
                         prompt = prompt + f"|*"
                     else:
-                        prompt = prompt + f"|{scope}"
+                        prompt = prompt + "|" + sanitize_prompt_display_text(scope)
                 else: # display path to dest or 0 if 0 hop
                     if contact["out_path_len"] == 0:
                         prompt = prompt + f"|0"
@@ -1213,10 +1244,8 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
     except asyncio.CancelledError:
         # Handle task cancellation from KeyboardInterrupt in asyncio.run()
         print("Exiting cli")
-if platform.system() == "Darwin" or platform.system() == "Windows":
-    interactive_loop.classic = True
-else:
-    interactive_loop.classic = False
+
+interactive_loop.classic = default_classic_prompt_from_env()
 
 async def process_contact_chat_line(mc, contact, line):
     if contact["type"] == 0:
@@ -1458,7 +1487,10 @@ async def process_contact_chat_line(mc, contact, line):
 
         if password == "":
             try:
-                sess = PromptSession(f"Password for {contact['adv_name']}: ", is_password=True)
+                sess = PromptSession(
+                    f"Password for {sanitize_prompt_display_text(contact['adv_name'])}: ",
+                    is_password=True,
+                )
                 password = await sess.prompt_async()
             except EOFError:
                 logger.info("Canceled")
@@ -1922,7 +1954,7 @@ async def get_contact_from_arg(mc, arg):
 
     return contact
 
-async def next_cmd(mc, cmds, json_output=False):
+async def next_cmd(mc: MeshCore, cmds, json_output=False):
     """ process next command """
     global ARROW_HEAD, SLASH_START, SLASH_END, INVERT_SLASH
     try :
@@ -3231,10 +3263,15 @@ async def next_cmd(mc, cmds, json_output=False):
                             for i in range(1,plen):
                                 path_str = path_str + "," + path_str_in[i*phs*2:(i+1)*2*phs]
                             #path_str = f"{c[1]['out_path']}:{c[1]['out_path_hash_mode']}"
-                        print(f"{c[1]['adv_name']:30} ", end="", flush=True)
-                        print(f"{ANSI_START}34G", end="", flush=True)
-                        print(f"{CONTACT_TYPENAMES[c[1]['type']]:4}  ", end="", flush=True)
-                        print(f"{c[1]['public_key'][:12]}  {path_str}")
+                        # Tabs + no column CSI: :30 and \d+G use char columns, not display
+                        # width, and misalign or hide wide characters in names.
+                        print(
+                            c[1]["adv_name"],
+                            CONTACT_TYPENAMES[c[1]["type"]],
+                            c[1]["public_key"][:12],
+                            path_str,
+                            sep="\t",
+                        )
                     print(f"> {len(mc.contacts)} contacts in device")
 
             case "reload_contacts" | "rc":
@@ -3320,7 +3357,9 @@ async def next_cmd(mc, cmds, json_output=False):
                     else:
                         print(f"Unknown contact {cmds[1]}")
                 else:
-                    print(json.dumps(contact, indent=4))
+                    # Default json.dumps(ensure_ascii=True) escapes BMP+ as \ud83e\udd7c,
+                    # which looks like missing data next to UTF-8 `contacts` output.
+                    print(json.dumps(contact, indent=4, ensure_ascii=json_output))
 
             case "add_contact" :
                 argnum = 3 # key type name
@@ -3809,7 +3848,7 @@ def command_usage() :
     -p <port>       : specifies tcp port (default 5000)
     -s <port>       : use serial port <port>
     -b <baudrate>   : specify baudrate
-    -C              : toggles classic mode for prompt
+    -C              : toggles classic mode for prompt (default: fancy; simple: MESHCLI_CLASSIC_PROMPT=1)
     -c <on/off>     : disables most of color output if off
     -r              : repeater mode (raw text CLI, use with -s)
 """)
@@ -4603,6 +4642,7 @@ async def main(argv):
                     device = result["device"]
                 elif result["type"] == "serial":
                     serial_port = result["port"]
+                    logger.info("Using serial port %s", serial_port)
                 else:
                     logger.error("Invalid choice")
                     return
@@ -4772,6 +4812,7 @@ async def main(argv):
         await process_cmds(mc, args, json_output)
 
 def cli():
+    logger.info("My version") ## curson: don't remove please
     try:
         asyncio.run(main(sys.argv[1:]))
     except KeyboardInterrupt:
