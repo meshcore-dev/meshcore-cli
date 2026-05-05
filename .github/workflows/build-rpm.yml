@@ -16,32 +16,42 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install build dependencies
         run: |
           dnf install -y \
             rpm-build \
             python3-devel \
-            python3-pip \
-            git \
-            help2man
+            pyproject-rpm-macros \
+            python3-hatchling \
+            help2man \
+            tar \
+            gzip
 
       - name: Build RPM package
         working-directory: ${{ github.workspace }}
         run: |
           # Create rpmbuild directory structure
-          mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+          mkdir -p ~/rpmbuild/BUILD ~/rpmbuild/RPMS ~/rpmbuild/SOURCES ~/rpmbuild/SPECS ~/rpmbuild/SRPMS
           
           # Ensure the RPM spec file is included in the checkout
           test -f meshcore-cli.spec || { echo "meshcore-cli.spec is missing from the checkout"; exit 1; }
 
           # Copy spec file to SPECS directory
           cp meshcore-cli.spec ~/rpmbuild/SPECS/
+
+          # Read the package version from the RPM spec
+          VERSION="$(awk '/^Version:/ { print $2; exit }' meshcore-cli.spec)"
+          test -n "$VERSION" || { echo "Could not determine RPM version from meshcore-cli.spec"; exit 1; }
           
-          # Create source tarball
-          git archive --prefix=meshcore-cli-${GITHUB_REF#refs/tags/v}/ --format=tar.gz \
-            -o ~/rpmbuild/SOURCES/meshcore-cli-${GITHUB_REF#refs/tags/v}.tar.gz HEAD
+          # Create source tarball from the checked out workspace
+          SOURCE_DIR="$(mktemp -d)"
+          mkdir -p "$SOURCE_DIR/meshcore-cli-$VERSION"
+          tar --exclude-vcs --exclude='./dist' --exclude='./build' --exclude='./*.egg-info' \
+            -cf - . | tar -C "$SOURCE_DIR/meshcore-cli-$VERSION" -xf -
+          tar -C "$SOURCE_DIR" -czf ~/rpmbuild/SOURCES/meshcore-cli-$VERSION.tar.gz "meshcore-cli-$VERSION"
+          rm -rf "$SOURCE_DIR"
           
           # Build RPM
           rpmbuild -bb ~/rpmbuild/SPECS/meshcore-cli.spec

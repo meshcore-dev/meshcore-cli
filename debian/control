@@ -6,9 +6,9 @@ Priority: optional
 Standards-Version: 4.6.2
 Build-Depends: debhelper-compat (= 13),
                dh-python,
+               pybuild-plugin-pyproject,
                python3-all,
                python3-hatchling,
-               python3-pip,
                python3-setuptools
 Vcs-Browser: https://github.com/fdlamotte/meshcore-cli
 Vcs-Git: https://github.com/fdlamotte/meshcore-cli.git

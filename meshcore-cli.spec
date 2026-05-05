@@ -8,8 +8,8 @@ Source0:        %{url}/archive/v%{version}.tar.gz#/meshcore-cli-%{version}.tar.g
 
 BuildArch:      noarch
 BuildRequires:  python3-devel >= 3.10
+BuildRequires:  pyproject-rpm-macros
 BuildRequires:  python3-hatchling
-BuildRequires:  python3-pip
 BuildRequires:  help2man
 
 Requires:       python3 >= 3.10
@@ -35,22 +35,22 @@ Features:
 %autosetup -n meshcore-cli-%{version}
 
 %build
-%py3_build
+%pyproject_wheel
 
 %install
-%py3_install
+%pyproject_install
+%pyproject_save_files meshcore_cli
 
 # Generate and install man page
+mkdir -p %{buildroot}%{_mandir}/man1
 help2man -N %{buildroot}%{_bindir}/meshcli > %{buildroot}%{_mandir}/man1/meshcli.1 || true
 help2man -N %{buildroot}%{_bindir}/meshcore-cli > %{buildroot}%{_mandir}/man1/meshcore-cli.1 || true
 
-%files
+%files -f %{pyproject_files}
 %doc README.md
 %license LICENSE
 %{_bindir}/meshcli
 %{_bindir}/meshcore-cli
-%{python3_sitelib}/meshcore_cli/
-%{python3_sitelib}/meshcore_cli-%{version}.dist-info/
 %{_mandir}/man1/meshcli.1*
 %{_mandir}/man1/meshcore-cli.1*
 
