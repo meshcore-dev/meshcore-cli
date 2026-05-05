@@ -33,6 +33,9 @@ jobs:
           # Create rpmbuild directory structure
           mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
           
+          # Ensure the RPM spec file is included in the checkout
+          test -f meshcore-cli.spec || { echo "meshcore-cli.spec is missing from the checkout"; exit 1; }
+
           # Copy spec file to SPECS directory
           cp meshcore-cli.spec ~/rpmbuild/SPECS/
           

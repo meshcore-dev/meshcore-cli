@@ -23,14 +23,11 @@ jobs:
           apt-get update
           apt-get install -y \
             build-essential \
-            debhelper-compat \
-            dh-exec \
             devscripts \
+            equivs \
             fakeroot \
-            git \
-            python3-all \
-            python3-hatchling \
-            python3-setuptools
+            git
+          mk-build-deps --install --remove --tool 'apt-get -y --no-install-recommends' debian/control
 
       - name: Build Debian package
         working-directory: ${{ github.workspace }}
