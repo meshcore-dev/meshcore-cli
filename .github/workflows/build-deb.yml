@@ -24,6 +24,7 @@ jobs:
           apt-get install -y \
             build-essential \
             debhelper-compat \
+            dh-exec \
             devscripts \
             fakeroot \
             git \

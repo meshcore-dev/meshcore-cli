@@ -28,15 +28,16 @@ jobs:
             help2man
 
       - name: Build RPM package
+        working-directory: ${{ github.workspace }}
         run: |
           # Create rpmbuild directory structure
           mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
           
           # Copy spec file to SPECS directory
-          cp "$GITHUB_WORKSPACE/meshcore-cli.spec" ~/rpmbuild/SPECS/
+          cp meshcore-cli.spec ~/rpmbuild/SPECS/
           
           # Create source tarball
-          git -C "$GITHUB_WORKSPACE" archive --prefix=meshcore-cli-${GITHUB_REF#refs/tags/v}/ --format=tar.gz \
+          git archive --prefix=meshcore-cli-${GITHUB_REF#refs/tags/v}/ --format=tar.gz \
             -o ~/rpmbuild/SOURCES/meshcore-cli-${GITHUB_REF#refs/tags/v}.tar.gz HEAD
           
           # Build RPM

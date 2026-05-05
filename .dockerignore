@@ -15,7 +15,9 @@ venv/
 env/
 .env
 *.md
+!README.md
 LICENSE
+!LICENSE
 debian/
 docs/
 *.spec
