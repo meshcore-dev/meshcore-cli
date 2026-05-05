@@ -16,11 +16,13 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 license = "MIT"
-license-files = ["LICEN[CS]E*"]
 dependencies = [ "meshcore >= 2.3.7",
 				 "bleak >= 0.22",
 				 "prompt_toolkit >= 3.0.50", 
 				 "requests >= 2.28.0" ]
+
+[project.license-files]
+paths = ["LICENSE"]
 
 [project.urls]
 Homepage = "https://github.com/fdlamotte/meshcore-cli"
