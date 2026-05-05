@@ -1,4 +1,4 @@
-#!/usr/bin/env dh_exec
+#!/usr/bin/make -f
 # Debian rules file for building meshcore-cli package
 
 %:
