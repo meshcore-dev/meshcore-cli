@@ -33,10 +33,10 @@ jobs:
           mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
           
           # Copy spec file to SPECS directory
-          cp meshcore-cli.spec ~/rpmbuild/SPECS/
+          cp "$GITHUB_WORKSPACE/meshcore-cli.spec" ~/rpmbuild/SPECS/
           
           # Create source tarball
-          git archive --prefix=meshcore-cli-${GITHUB_REF#refs/tags/v}/ --format=tar.gz \
+          git -C "$GITHUB_WORKSPACE" archive --prefix=meshcore-cli-${GITHUB_REF#refs/tags/v}/ --format=tar.gz \
             -o ~/rpmbuild/SOURCES/meshcore-cli-${GITHUB_REF#refs/tags/v}.tar.gz HEAD
           
           # Build RPM

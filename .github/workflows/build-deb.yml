@@ -32,9 +32,8 @@ jobs:
             python3-setuptools
 
       - name: Build Debian package
-        run: |
-          cd ${{ github.workspace }}
-          debuild -us -uc -b
+        working-directory: ${{ github.workspace }}
+        run: debuild -us -uc -b
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
