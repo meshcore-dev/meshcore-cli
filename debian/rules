@@ -1,0 +1,17 @@
+#!/usr/bin/env dh_exec
+# Debian rules file for building meshcore-cli package
+
+%:
+	dh $@ --with python3 --buildsystem=pybuild
+
+override_dh_auto_build:
+	python3 -m hatchling build
+
+override_dh_auto_test:
+	# Skip tests for now
+	true
+
+override_dh_install:
+	python3 -m pip install --root=debian/meshcore-cli --no-deps --force-reinstall .
+	# Remove any egg-info directories
+	find debian/meshcore-cli -type d -name '*.egg-info' -exec rm -rf {} + 2>/dev/null || true

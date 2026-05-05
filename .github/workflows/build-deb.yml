@@ -1,0 +1,63 @@
+name: Build Debian Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+    container: debian:bookworm
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            build-essential \
+            debhelper-compat \
+            devscripts \
+            fakeroot \
+            git \
+            python3-all \
+            python3-hatchling \
+            python3-setuptools
+
+      - name: Build Debian package
+        run: |
+          cd ${{ github.workspace }}
+          debuild -us -uc -b
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: debian-package
+          path: |
+            /tmp/meshcore-cli*.deb
+            /tmp/meshcore-cli*.changes
+          retention-days: 30
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            /tmp/meshcore-cli*.deb
+            /tmp/meshcore-cli*.changes
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          echo "Debian package built and uploaded to release"

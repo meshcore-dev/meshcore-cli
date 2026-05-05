@@ -1,0 +1,8 @@
+#!/usr/bin/make -f
+
+# Exclude these files/dirs
+debian/.gitignore
+debian/files
+debian/meshcore-cli.debhelper.log
+debian/meshcore-cli.substvars
+debian/meshcore-cli/
