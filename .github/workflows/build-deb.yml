@@ -38,8 +38,8 @@ jobs:
         with:
           name: debian-package
           path: |
-            /tmp/meshcore-cli*.deb
-            /tmp/meshcore-cli*.changes
+            ${{ github.workspace }}/../meshcore-cli*.deb
+            ${{ github.workspace }}/../meshcore-cli*.changes
           retention-days: 30
 
       - name: Create Release
@@ -47,8 +47,8 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           files: |
-            /tmp/meshcore-cli*.deb
-            /tmp/meshcore-cli*.changes
+            ${{ github.workspace }}/../meshcore-cli*.deb
+            ${{ github.workspace }}/../meshcore-cli*.changes
           draft: false
           prerelease: false
         env:
