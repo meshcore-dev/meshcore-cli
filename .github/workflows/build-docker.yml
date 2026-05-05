@@ -17,7 +17,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
@@ -55,6 +55,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -64,3 +65,38 @@ jobs:
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
           platforms: linux/amd64,linux/arm64
+
+      - name: Add Docker image to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "" || \
+              gh release view "$TAG_NAME" >/dev/null
+          fi
+
+          gh release view "$TAG_NAME" --json body --jq '.body // ""' > release-body.md
+          awk '
+            /<!-- docker-image:start -->/ { skip = 1; next }
+            /<!-- docker-image:end -->/ { skip = 0; next }
+            !skip { print }
+          ' release-body.md > release-body-updated.md
+
+          cat >> release-body-updated.md <<EOF
+
+          <!-- docker-image:start -->
+          ## Docker image
+
+          \`\`\`bash
+          docker pull $IMAGE:$TAG_NAME
+          \`\`\`
+
+          Image digest: \`$IMAGE_DIGEST\`
+          <!-- docker-image:end -->
+          EOF
+
+          gh release edit "$TAG_NAME" --notes-file release-body-updated.md

@@ -1,5 +1,5 @@
 # Multi-stage build for meshcore-cli
-FROM python:3.10-slim as builder
+FROM python:3.10-slim AS builder
 
 WORKDIR /build
 
