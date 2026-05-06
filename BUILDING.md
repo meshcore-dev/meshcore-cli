@@ -82,7 +82,7 @@ rpmbuild -bb ~/rpmbuild/SPECS/meshcore-cli.spec
 ### Install the built package
 
 ```bash
-sudo dnf install ~/rpmbuild/RPMS/noarch/meshcore-cli-*.rpm
+sudo dnf install ~/rpmbuild/RPMS/*/*.rpm
 ```
 
 ### Test the installation
@@ -144,7 +144,7 @@ Triggers on:
 - Git tags matching `v*` pattern
 - Manual workflow dispatch
 
-Builds and uploads RPM package to GitHub Releases.
+Builds and uploads the RPM package set to GitHub Releases.
 
 ### Docker Workflow (.github/workflows/build-docker.yml)
 
@@ -203,7 +203,7 @@ sudo dpkg -i meshcore-cli_1.5.8_all.deb
 
 ### Install from .rpm package
 ```bash
-sudo dnf install meshcore-cli-1.5.8-1.fc*.noarch.rpm
+sudo dnf install ./*.rpm
 ```
 
 ### Pull from Docker Registry

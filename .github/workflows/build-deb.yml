@@ -23,15 +23,23 @@ jobs:
           apt-get update
           apt-get install -y \
             build-essential \
+            ca-certificates \
+            debhelper-compat \
             devscripts \
+            dh-python \
             equivs \
             fakeroot \
-            git
+            git \
+            python3-installer \
+            python3-pip
           mk-build-deps --install --remove --tool 'apt-get -y --no-install-recommends' debian/control
 
       - name: Build Debian package
         working-directory: ${{ github.workspace }}
         run: debuild -us -uc -b
+
+      - name: Build Debian dependency packages
+        run: packaging/build-python-dependency-debs.sh
 
       - name: Collect Debian package files
         run: |

@@ -15,7 +15,7 @@ All six steps for building Debian, Fedora, Docker, and GitHub Actions workflows 
 
 **Key features:**
 - Targets Debian/Ubuntu
-- Properly declares dependencies: meshcore, bleak, prompt-toolkit, requests
+- Builds release `.deb` packages for meshcore-cli and missing Python dependencies
 - Uses Python 3.10+ requirement
 - Includes comprehensive package description
 
@@ -112,9 +112,10 @@ man ./docs/meshcli.1
 - Triggers on: Git tags (v*) and manual dispatch
 - Runs on: Debian Bookworm container
 - Installs all build dependencies automatically
+- Builds separate `.deb` packages for meshcore-cli Python dependencies
 - Builds .deb package using debuild
 - Uploads artifacts to workflow (30-day retention)
-- Creates GitHub Release with .deb and .changes files
+- Creates GitHub Release with all .deb and .changes files
 - Permissions: Write access to contents
 
 **Triggered by:**
@@ -219,14 +220,14 @@ git push origin main --follow-tags
 ```
 
 ### 3. Workflows automatically trigger:
-- ✅ Debian .deb package built and uploaded to Releases
+- ✅ Debian .deb package set built and uploaded to Releases
 - ✅ Fedora .rpm package built and uploaded to Releases
 - ✅ Docker image built and pushed to GHCR
 
 ### 4. Verify releases:
 
 ```bash
-# Check GitHub Releases page for .deb and .rpm
+# Check GitHub Releases page for .deb package set and .rpm
 # Docker image available at:
 docker pull ghcr.io/fdlamotte/meshcore-cli:v1.5.8
 ```
@@ -237,8 +238,8 @@ docker pull ghcr.io/fdlamotte/meshcore-cli:v1.5.8
 
 Users can now install meshcore-cli via:
 
-1. **Debian/Ubuntu**: `sudo apt install ./meshcore-cli_1.5.8_all.deb`
-2. **Fedora/RHEL**: `sudo dnf install meshcore-cli-1.5.8-1.fc*.noarch.rpm`
+1. **Debian/Ubuntu**: download all Debian `.deb` assets, then run `sudo apt install ./*.deb`
+2. **Fedora/RHEL**: download all RPM assets, then run `sudo dnf install ./*.rpm`
 3. **Docker**: `docker pull ghcr.io/fdlamotte/meshcore-cli:v1.5.8`
 4. **pipx** (original): `pipx install meshcore-cli`
 5. **Nix**: `nix run github:meshcore-dev/meshcore-cli#meshcore-cli`

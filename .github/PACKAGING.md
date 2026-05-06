@@ -8,13 +8,13 @@ This project includes complete build configurations for multiple distribution fo
 - **File**: [`debian/`](debian/)
 - **Status**: ✅ Ready
 - **Platform**: Debian, Ubuntu, Linux Mint
-- **Installation**: `sudo apt install ./meshcore-cli_*.deb`
+- **Installation**: download all Debian `.deb` assets from the release, then run `sudo apt install ./*.deb`
 
 ### 2. Fedora/RHEL Package (.rpm)
 - **File**: [`meshcore-cli.spec`](meshcore-cli.spec)
 - **Status**: ✅ Ready
 - **Platform**: Fedora, RHEL, CentOS
-- **Installation**: `sudo dnf install meshcore-cli-*.rpm`
+- **Installation**: download all RPM assets from the release, then run `sudo dnf install ./*.rpm`
 
 ### 3. Docker Container
 - **File**: [`Dockerfile`](Dockerfile)
@@ -34,13 +34,13 @@ All workflows are configured to trigger automatically on git tags.
 ### Build Debian Package
 - **Workflow**: [`.github/workflows/build-deb.yml`](.github/workflows/build-deb.yml)
 - **Triggers**: Tags matching `v*`, manual dispatch
-- **Output**: Uploads `.deb` and `.changes` files to GitHub Releases
+- **Output**: Uploads `meshcore-cli` plus its Python dependency `.deb` files to GitHub Releases
 - **Platform**: Debian Bookworm container
 
 ### Build RPM Package
 - **Workflow**: [`.github/workflows/build-rpm.yml`](.github/workflows/build-rpm.yml)
 - **Triggers**: Tags matching `v*`, manual dispatch
-- **Output**: Uploads `.rpm` files to GitHub Releases
+- **Output**: Uploads `meshcore-cli` plus its Python dependency `.rpm` files to GitHub Releases
 - **Platform**: Fedora latest container
 
 ### Build & Push Docker Image
@@ -99,8 +99,8 @@ This will automatically:
 
 ### Test Debian build
 ```bash
-cd debian && debuild -us -uc -b
-sudo dpkg -i ../meshcore-cli_*.deb
+debuild -us -uc -b
+sudo apt install ../*.deb
 ```
 
 ### Test RPM build
@@ -122,10 +122,10 @@ After release, users can install via:
 
 ```bash
 # Option 1: System package (Ubuntu/Debian)
-sudo apt install ./meshcore-cli_1.5.8_all.deb
+sudo apt install ./*.deb
 
 # Option 2: System package (Fedora/RHEL)
-sudo dnf install meshcore-cli-1.5.8-1.fc*.noarch.rpm
+sudo dnf install ./*.rpm
 
 # Option 3: Docker container
 docker pull ghcr.io/fdlamotte/meshcore-cli:v1.5.8

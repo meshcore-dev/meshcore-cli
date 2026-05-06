@@ -13,10 +13,6 @@ BuildRequires:  python3-hatchling
 BuildRequires:  help2man
 
 Requires:       python3 >= 3.10
-Requires:       python3-meshcore >= 2.3.7
-Requires:       python3-bleak >= 0.22
-Requires:       python3-prompt-toolkit >= 3.0.50
-Requires:       python3-requests >= 2.28.0
 
 %description
 meshcore-cli is a tool that connects to your companion radio node (meshcore client)
