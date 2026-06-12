@@ -4704,7 +4704,7 @@ async def main(argv):
         return
 
     if os.path.isdir(MCCLI_CONFIG_DIR) :
-        log_message.file = MCCLI_CONFIG_DIR + mc.self_info["name"] + ".msgs"
+        log_message.file = MCCLI_CONFIG_DIR + (mc.self_info["name"].replace("/","")) + ".msgs"
 
     if (json_output or quiet) :
         logger.setLevel(logging.ERROR)
