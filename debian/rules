@@ -1,0 +1,11 @@
+#!/usr/bin/make -f
+# Debian rules file for building meshcore-cli package
+
+export PYBUILD_SYSTEM=pyproject
+
+%:
+	dh $@ --with python3 --buildsystem=pybuild
+
+override_dh_auto_test:
+	# Skip tests for now
+	true
