@@ -22,6 +22,8 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.shortcuts import radiolist_dialog
 from prompt_toolkit.completion.word_completer import WordCompleter
 from prompt_toolkit.document import Document
+from prompt_toolkit.patch_stdout import patch_stdout
+
 
 try:
     from bleak import BleakScanner, BleakClient
@@ -98,28 +100,7 @@ def escape_ansi(line):
     ansi_escape = re.compile(r'(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]')
     return ansi_escape.sub('', line)
 
-def print_one_line_above(str):
-    """ prints a string above current line """
-    width = os.get_terminal_size().columns
-    stringlen = len(escape_ansi(str))-1
-    lines = divmod(stringlen, width)[0] + 1
-    print("\u001B[s", end="")                   # Save current cursor position
-    print("\u001B[A", end="")                   # Move cursor up one line
-    print("\u001B[999D", end="")                # Move cursor to beginning of line
-    for _ in range(lines):
-        print("\u001B[S", end="")                   # Scroll up/pan window down 1 line
-        print("\u001B[L", end="")                   # Insert new line
-    for _ in range(lines - 1):
-        print("\u001B[A", end="")                   # Move cursor up one line
-    print(str, end="")                          # Print output status msg
-    print("\u001B[u", end="", flush=True)       # Jump back to saved cursor position
-
-def print_above(str):
-    lines = str.split('\n')
-    for l in lines:
-        print_one_line_above(l)
-
-async def process_event_message(mc, ev, json_output, end="\n", above=False):
+async def process_event_message(mc, ev, json_output, end="\n"):
     """ display incoming message """
     if ev is None :
         logger.error("Event does not contain message.")
@@ -130,10 +111,7 @@ async def process_event_message(mc, ev, json_output, end="\n", above=False):
         logger.error(f"Error retrieving messages: {ev.payload}")
         return False
     elif json_output :
-        if above :
-            print_above(json.dumps(ev.payload))
-        else:
-            print(json.dumps(ev.payload), end=end, flush=True)
+        print(json.dumps(ev.payload), end=end, flush=True)
     else :
         await mc.ensure_contacts()
         data = ev.payload
@@ -194,10 +172,7 @@ async def process_event_message(mc, ev, json_output, end="\n", above=False):
             if not process_event_message.color:
                 disp = escape_ansi(disp)
 
-            if above:
-                print_above(disp)
-            else:
-                print(disp, flush=True)
+            print(disp)
 
         elif (data['type'] == "CHAN") :
             path_str = f"{ANSI_YELLOW}({path_str}){ANSI_END}"
@@ -217,10 +192,7 @@ async def process_event_message(mc, ev, json_output, end="\n", above=False):
             if not process_event_message.color:
                 disp = escape_ansi(disp)
 
-            if above:
-                print_above(disp)
-            else:
-                print(disp)
+            print(disp)
         else:
             print(json.dumps(ev.payload))
     return True
@@ -256,10 +228,7 @@ async def handle_log_rx(event):
                 dispmsg = message.replace("\n","")[0:cars]
                 txt = f"{ANSI_LIGHT_GRAY}{chan_name} {ANSI_DGREEN}{dispmsg+(cars-len(dispmsg))*' '} {ANSI_START}{width-11-len(event.payload['path'])}G{ANSI_YELLOW}[{event.payload['path']}]{ANSI_LIGHT_GRAY}{event.payload['snr']:6,.2f}{event.payload['rssi']:4}{ANSI_END}"
 
-                if handle_message.above:
-                    print_above(txt)
-                else:
-                    print(txt)
+                print(txt)
 
     elif payload_type == 0x04: # Advert
         if handle_log_rx.advert_echoes:
@@ -301,19 +270,13 @@ async def handle_log_rx(event):
                 txt += f" {ANSI_LIGHT_GRAY}coords: {adv_lat},{adv_lon}"
             txt += f" {ANSI_YELLOW}path: [{event.payload['path']}] {ANSI_LIGHT_GRAY}snr: {event.payload['snr']:.2f}dB{ANSI_END}"
 
-            if handle_message.above:
-                print_above(txt)
-            else:
-                print(txt)
+            print(txt)
 
     event.payload["pkt_payload"] = event.payload["pkt_payload"].hex() # convert for json serialization
 
     if handle_log_rx.json_log_rx: # json mode ... raw dump
         msg = json.dumps(event.payload)
-        if handle_message.above:
-            print_above(msg)
-        else :
-            print(msg)
+        print(msg)
 
 
 handle_log_rx.json_log_rx = False
@@ -338,10 +301,8 @@ async def handle_advert(event):
 
         msg = f"Got advert from {name} [{key}]"
 
-    if handle_message.above:
-        print_above(msg)
-    else :
-        print(msg)
+    print(msg)
+
 handle_advert.print_adverts=False
 handle_advert.mc=None
 
@@ -361,10 +322,7 @@ async def handle_path_update(event):
 
         msg = f"Got path update for {name} [{key}]"
 
-    if handle_message.above:
-        print_above(msg)
-    else :
-        print(msg)
+    print(msg)
 handle_path_update.print_path_updates=False
 handle_path_update.mc=None
 
@@ -380,10 +338,7 @@ async def handle_new_contact(event):
 
         msg = f"New pending contact {name} [{key}]"
 
-    if handle_message.above:
-        print_above(msg)
-    else :
-        print(msg)
+    print(msg)
 handle_new_contact.print_new_contacts=False
 
 async def log_message(mc, msg):
@@ -415,21 +370,18 @@ async def handle_message(event):
     """ Process incoming message events """
     if handle_message.display :
         await process_event_message(handle_message.mc, event,
-                                above=handle_message.above,
                                 json_output=handle_message.json_output)
     await log_message(handle_message.mc, event.payload.copy())
 
 handle_message.json_output=False
 handle_message.mc=None
-handle_message.above=False
 handle_message.display=True
 
-async def subscribe_to_msgs(mc, json_output=False, above=False):
+async def subscribe_to_msgs(mc, json_output=False):
     """ Subscribe to incoming messages """
     global PS, CS
     await mc.ensure_contacts()
     handle_message.json_output = json_output
-    handle_message.above = above
     # Subscribe to private messages
     if PS is None :
         PS = mc.subscribe(EventType.CONTACT_MSG_RECV, handle_message)
@@ -846,7 +798,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
     # long list of msgs
     await next_cmd(mc, ["sync_msgs"])
 
-    await subscribe_to_msgs(mc, above=True)
+    await subscribe_to_msgs(mc)
 
     try:
         if os.path.isdir(MCCLI_CONFIG_DIR) :
@@ -962,7 +914,8 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                                     to=contact,
                                     channels = mc.channels))
 
-            line = await session.prompt_async(ANSI(prompt),
+            with patch_stdout(raw=True):
+                line = await session.prompt_async(ANSI(prompt),
                                               complete_while_typing=False,
                                               completer=completer,
                                               key_bindings=bindings)
@@ -4174,12 +4127,13 @@ async def prompt_for_file():
 
     path_completer = PathCompleter(expanduser=True)
 
-    file_path = await file_session.prompt_async(
-        "Enter filename (Tab to complete CTRL+C to cancel): ",
-        completer=path_completer,
-        complete_while_typing=False,
-        key_bindings=bindings
-    )
+    with patch_stdout(raw=True):
+        file_path = await file_session.prompt_async(
+            "Enter filename (Tab to complete CTRL+C to cancel): ",
+            completer=path_completer,
+            complete_while_typing=False,
+            key_bindings=bindings
+        )
 
     return file_path
 
@@ -4424,12 +4378,13 @@ async def repeater_loop(ser):
 
     while True:
         try:
-            cmd = await session.prompt_async(
-                ANSI(prompt_base),
-                completer=completer,
-                complete_while_typing=False,
-                key_bindings=bindings
-            )
+            with patch_stdout(raw=True):
+                cmd = await session.prompt_async(
+                    ANSI(prompt_base),
+                    completer=completer,
+                    complete_while_typing=False,
+                    key_bindings=bindings
+                )
         except (KeyboardInterrupt, EOFError):
             break
 
