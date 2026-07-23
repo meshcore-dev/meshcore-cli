@@ -538,7 +538,8 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "max_attempts" : None,
             "max_flood_attempts" : None,
             "flood_after" : None,
-            "path_hash_mode": None,
+            "path_hash_mode": {"0":None, "1":None, "2":None},
+            "path.hash.mode": {"0":None, "1":None, "2":None},
             "default_scope": None,
         },
         "get" : {"name":None,
@@ -581,6 +582,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "stats_packets":None,
             "allowed_repeat_freq":None,
             "path_hash_mode":None,
+            "path.hash.mode":None,
             "default_scope":None,
         },
         "?get":None,
@@ -691,6 +693,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "bridge.baud":None,
             "bridge.secret":None,
             "bridge.type":None,
+            "path.hash.mode":None,
             },
         "set" : {"name" : None,
             "radio" : {",,,":None, "f,bw,sf,cr": None},
@@ -716,6 +719,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "bridge.source":None,
             "bridge.baud":None,
             "bridge.secret":None,
+            "path.hash.mode":{"0": None, "1": None, "2": None},
             },
         "erase": None,
         "log" : {"start" : None, "stop" : None, "erase" : None}
@@ -2026,7 +2030,7 @@ async def next_cmd(mc, cmds, json_output=False):
                             output_str += json.dumps(res.payload, indent=4)+"\n"
                         else:
                             output_str += "ok\n"
-                    case "path_hash_mode":
+                    case "path_hash_mode" | "path.hash.mode":
                         mode = int(cmds[2])
                         if mode >= 3:
                             logger.error(f"Can't set value to {mode}")
@@ -2356,7 +2360,7 @@ async def next_cmd(mc, cmds, json_output=False):
                                 output_str += f"Repeat: {'on' if res.payload['repeat'] else 'off'}\n"
                             else:
                                 output_str += "Can't repeat\n"
-                    case "path_hash_mode":
+                    case "path_hash_mode"|"path.hash.mode":
                         res = await mc.commands.send_device_query()
                         logger.debug(res)
                         if res.type == EventType.ERROR :
