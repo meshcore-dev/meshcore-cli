@@ -3518,7 +3518,8 @@ async def next_cmd(mc, cmds, json_output=False):
                     if json_output:
                         await ps.prompt_async()
                     else:
-                        await ps.prompt_async("Press Enter to continue ...\n")
+                        with patch_stdout(raw=True):
+                            await ps.prompt_async("Press Enter to continue ...\n")
                 except (EOFError, KeyboardInterrupt, asyncio.CancelledError):
                     pass
 
