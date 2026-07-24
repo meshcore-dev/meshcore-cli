@@ -15,13 +15,11 @@ import traceback
 from prompt_toolkit.shortcuts import PromptSession
 from prompt_toolkit.shortcuts import CompleteStyle
 from prompt_toolkit.completion import NestedCompleter, PathCompleter
-from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.shortcuts import radiolist_dialog
 from prompt_toolkit.completion.word_completer import WordCompleter
-from prompt_toolkit.document import Document
 from prompt_toolkit.patch_stdout import patch_stdout
 
 
@@ -31,8 +29,6 @@ try:
     BLEAK_AVAILABLE = True
 except ImportError:
     BLEAK_AVAILABLE = False
-
-import re
 
 from meshcore import MeshCore, EventType, logger
 
@@ -222,6 +218,8 @@ async def handle_log_rx(event):
                     chan_name = event.payload["chan_hash"]
                 if "crypted" in event.payload:
                     message = event.payload["crypted"]
+                else:
+                    message = "-- unhandled --"
 
             if chan_name != "" :
                 width = os.get_terminal_size().columns
@@ -1036,7 +1034,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                             await send_chan_msg(mc, ch["channel_idx"], line.split(" ", 1)[1])
                         else :
                             try :
-                                print(await process_cmds(mc, shlex.split(line[1:])),"")
+                                print(await process_cmds(mc, shlex.split(line[1:])), end="")
                             except ValueError:
                                 logger.error(f"Error processing line{line[1:]}")
                 else:
@@ -1133,7 +1131,7 @@ else:
 async def process_contact_chat_line(mc, contact, line):
     output_str = None
     if contact["type"] == 0:
-        return False
+        return None
 
     # if one element in line (most cases) strip the scope and apply it
     if not " " in line and "%" in line:
@@ -1157,7 +1155,7 @@ async def process_contact_chat_line(mc, contact, line):
             output_str += " "
             secline = line.split(" ", 1)[1]
             r = await process_contact_chat_line(mc, contact, secline)
-            if not res is None:
+            if not r is None:
                 output_str += r
         else:
             output_str += "\n"
@@ -1241,14 +1239,16 @@ async def process_contact_chat_line(mc, contact, line):
         try:
             if cmd_pos > 0:
                 secline = line.split(" ",cmd_pos)[cmd_pos]
-                output_str += await process_contact_chat_line(mc, contact, secline)
+                r = await process_contact_chat_line(mc, contact, secline)
+                if not r is None:
+                    output_str += r
         except IndexError:
             pass
 
         # will sleep after executed command if there is a command
         await asyncio.sleep(sleeptime)
 
-        return ""
+        return output_str
 
     # commands that take contact as second arg will be sent to recipient
     # and can be chained ...
@@ -1295,7 +1295,7 @@ async def process_contact_chat_line(mc, contact, line):
         return ""
 
     if line == "get timeout":
-        return f"timeout: {0 if not 'timeout' in contact else contact['timeout']}"
+        return f"timeout: {0 if not 'timeout' in contact else contact['timeout']}\n"
 
     if contact["type"] == 4 and\
             (line.startswith("get mma ")) or\
@@ -1404,10 +1404,14 @@ async def process_contact_chat_line(mc, contact, line):
             os.remove(password_file)
         try:
             secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc, contact, secline)
+            r = await process_contact_chat_line(mc, contact, secline)
+            if not r is None:
+                output_str += r
+                
         except IndexError:
             pass
-        return ""
+
+        return output_str
 
     if contact["type"] == 4 and \
         (line.startswith("req_mma ") or line.startswith('rm ')) :
@@ -2322,13 +2326,13 @@ async def next_cmd(mc, cmds, json_output=False):
                         if json_output :
                             output_str += json.dumps(mc.self_info["name"])+"\n"
                         else:
-                            print(mc.self_info["name"])
+                            output_str += mc.self_info["name"] + "\n"
                     case "tx":
                         await mc.commands.send_appstart()
                         if json_output :
                             output_str += json.dumps(mc.self_info["tx_power"])+"\n"
                         else:
-                            print(mc.self_info["tx_power"])
+                            output_str += str(mc.self_info["tx_power"]) + "\n"
                     case "coords":
                         await mc.commands.send_appstart()
                         if json_output :
@@ -2653,14 +2657,19 @@ async def next_cmd(mc, cmds, json_output=False):
                     nb = int(cmds[1])
                 else:
                     chan = await get_channel_by_name(mc, cmds[1])
-                    output_str += chan + "\n"
-                    nb = chan['channel_idx']
-                res = await send_chan_msg(mc, nb, cmds[2])
-                logger.debug(res)
-                if res.type == EventType.ERROR:
-                    output_str += f"Error sending message: {res}\n"
-                elif json_output :
-                    output_str += json.dumps(res.payload, indent=4)+"\n"
+                    if chan is None:
+                        nb = None
+                    else:
+                        nb = chan['channel_idx']
+                if nb is None:
+                    logger.error("Invalid channel")
+                else:
+                    res = await send_chan_msg(mc, nb, cmds[2])
+                    logger.debug(res)
+                    if res.type == EventType.ERROR:
+                        output_str += f"Error sending message: {res}\n"
+                    elif json_output :
+                        output_str += json.dumps(res.payload, indent=4)+"\n"
 
             case "public" | "dch" : # default chan
                 argnum = 1
@@ -2696,7 +2705,6 @@ async def next_cmd(mc, cmds, json_output=False):
                     if res.type == EventType.ERROR:
                         output_str += f"Error sending cmd: {res}\n"
                     elif json_output :
-                        output_str += res.payload + "\n"
                         output_str += json.dumps(res.payload, indent=4)+"\n"
 
             case "trace" | "tr":
@@ -3356,7 +3364,7 @@ async def next_cmd(mc, cmds, json_output=False):
                 if res is None:
                     logger.error("couldn't send cmd")
                 elif res.type == EventType.ERROR:
-                    output_str += print(res)
+                    output_str += f"Error getting advert path : {res}\n"
                 else:
                     if json_output:
                         output_str += json.dumps(res.payload)+"\n"
@@ -3437,9 +3445,9 @@ async def next_cmd(mc, cmds, json_output=False):
                         resp = requests.post("https://map.meshcore.dev/api/v1/nodes",
                                             json = {"links": [res.payload['uri']]})
                         if json_output :
-                            output_str += json.dumps({"response", str(resp)})+"\n"
+                            output_str += json.dumps({"response": str(resp)})+"\n"
                         else :
-                            output_str += resp + "\n"
+                            output_str += str(resp) + "\n"
 
             case "card" :
                 res = await mc.commands.export_contact()
@@ -3460,9 +3468,9 @@ async def next_cmd(mc, cmds, json_output=False):
                     resp = requests.post("https://map.meshcore.dev/api/v1/nodes",
                                          json = {"links": [res.payload['uri']]})
                     if json_output :
-                        output_str += json.dumps({"response", str(resp)})+"\n"
+                        output_str += json.dumps({"response": str(resp)})+"\n"
                     else :
-                        output_str += resp + "\n"
+                        output_str += str(resp) + "\n"
 
             case "remove_contact" :
                 argnum = 1
@@ -3599,7 +3607,7 @@ async def next_cmd(mc, cmds, json_output=False):
                 else:
                     file_name = await prompt_for_file()
                 if not file_name is None:
-                    await process_script(mc, file_name, json_output=json_output)
+                    output_str += await process_script(mc, file_name, json_output=json_output)
 
             case _ :
                 contact = await get_contact_from_arg(mc, cmds[0])
@@ -3614,17 +3622,18 @@ async def next_cmd(mc, cmds, json_output=False):
 
     except IndexError:
         logger.error("Error in parameters")
-        return None
+        return (None, "")
     except (EOFError, KeyboardInterrupt):
         logger.error("Cancelled")
-        return None
+        return (None, "")
 
 async def process_cmds (mc, args, json_output=False) :
     cmds = args
     output_str = ""
     while cmds and len(cmds) > 0 and cmds[0][0] != '#' :
         (cmds, cur_output) = await next_cmd(mc, cmds, json_output)
-        output_str += cur_output
+        if not cur_output is None:
+            output_str += cur_output
     return output_str
 
 async def process_script(mc, file, json_output=False):
@@ -3634,7 +3643,7 @@ async def process_script(mc, file, json_output=False):
         logger.info(f"file {file} not found")
         if json_output :
             output_str += json.dumps({"error" : f"file {file} not found"})+"\n"
-        return
+        return output_str
 
     with open(file, "r") as f :
         lines=f.readlines()
@@ -4587,7 +4596,7 @@ async def main(argv):
             logger.error("To connect to a repeater, use -r option.")
     elif BLEAK_AVAILABLE : # connect via ble
         client = None
-        if device or address and len(address.split(":")) == 6 :
+        if device or (address and len(address.split(":"))) == 6 :
             pass
         elif address and len(address) == 36 and len(address.split("-")) == 5:
             client = BleakClient(address) # mac uses uuid, we'll pass a client
