@@ -12,6 +12,7 @@ import requests
 import serial.tools.list_ports
 from pathlib import Path
 import traceback
+import subprocess
 from prompt_toolkit.shortcuts import PromptSession
 from prompt_toolkit.shortcuts import CompleteStyle
 from prompt_toolkit.completion import NestedCompleter, PathCompleter
@@ -36,7 +37,8 @@ from meshcore import MeshCore, EventType, logger
 VERSION = "v1.5.7"
 
 # default ble address is stored in a config file
-MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
+HOME_DIR = str(Path.home())
+MCCLI_CONFIG_DIR = HOME_DIR + "/.config/meshcore/"
 MCCLI_ADDRESS = MCCLI_CONFIG_DIR + "default_address"
 MCCLI_HISTORY_FILE = MCCLI_CONFIG_DIR + "history"
 MCCLI_INIT_SCRIPT = MCCLI_CONFIG_DIR + "init"
@@ -788,11 +790,9 @@ Use \"to\" to select recipient, use Tab to complete name ...
 Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
 \"quit\", \"q\", CTRL+D will end interactive mode""")
 
-    sync = sys.stdout
-
+    sink = sys.stdout
     contact = to
     prev_contact = None
-
     scope = await set_scope(mc, "*")
     prev_scope = scope
 
@@ -834,6 +834,9 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
         while True:
             # reset scope (if changed)
             scope = await set_scope(mc, scope)
+
+            # reset sink to stdout
+            sink = sys.stdout
 
             color = process_event_message.color
             classic = interactive_loop.classic or not color
@@ -928,198 +931,52 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
             line = line.strip()
 
             if line == "" : # blank line
-                pass
+                continue
 
-            elif line.startswith("?") :
+            if line.startswith("?") :
                 get_help_for(line[1:], context="chat")
+                continue
 
-            # raw meshcli command as on command line
-            elif line.startswith("$") :
-                try :
-                    args = shlex.split(line[1:])
-                    await process_cmds(mc, args, sink=sink)
-                except ValueError:
-                    logger.error("Error parsing line {line[1:]}")
-
-            elif line.startswith("/scope") or\
-                    line.startswith("scope") and contact is None:
-                if not scope is None:
-                    prev_scope = scope
-                    try:
-                        newscope = line.split(" ", 1)[1]
-                        scope = await set_scope(mc, newscope)
-                    except IndexError:
-                        sink.write(scope)
-                        sink.write("\n")
-
-            elif line == "quit" or line == "q" or line == "/quit" or line == "/q" :
+            if line == "quit" or line == "q" or line == "/quit" or line == "/q" :
                 break
 
-            elif contact is None and (line.startswith("apply_to ") or line.startswith("at ")) or\
-                 line.startswith("/apply_to ") or line.startswith("/at ") :
+            if line.startswith(">") : # to-file redirection
+                line = line[1:].strip()
                 try:
-                    await apply_command_to_contacts(mc, line.split(" ",2)[1], line.split(" ",2)[2], sink=sink)
-                except IndexError:
-                    logger.error(f"Error with apply_to command parameters")
+                    l = shlex.split(line, 1)
+                except ValueError (e):
+                    logger.error("Couldn't parse filename")
+                    continue
+                try :
+                    file_path = l[0].replace("~", HOME_DIR)
+                    with open(file_path, "w") as file:
+                        (new_contact, new_scope) = await process_line(mc, l[1], contact, prev_contact, scope, prev_scope, sink=file)
+                except FileNotFoundError:
+                    logger.error("File not found")
+                    continue
 
-            elif line.startswith("to ") or line.startswith("/to "): # dest
-                dest = line.split(" ", 1)[1]
-                if dest.startswith("\"") or dest.startswith("\'") : # if name starts with a quote
-                    dest = shlex.split(dest)[0] # use shlex.split to get contact name between quotes
-                dest_scope = None
-                if '%' in dest and scope!=None :
-                    dest_scope = dest.split("%")[-1]
-                    dest = dest[:-len(dest_scope)-1]
-                nc = await get_contact_from_arg(mc, dest)
-                if nc is None:
-                    if dest == "public" :
-                        nc = {"adv_name" : "public", "type" : 0, "chan_nb" : 0}
-                        if hasattr(mc, "channels"):
-                            nc["adv_name"] = mc.channels[0]["channel_name"]
-                    elif dest.startswith("ch"):
-                        dest = int(dest[2:])
-                        nc = {"adv_name" : "chan" + str(dest), "type" : 0, "chan_nb" : dest}
-                        if hasattr(mc, "channels"):
-                            nc["adv_name"] = mc.channels[dest]["channel_name"]
-                    elif dest == ".." : # previous recipient
-                        nc = prev_contact
-                        if dest_scope is None and not prev_scope is None:
-                            dest_scope = prev_scope
-                    elif dest == "~" or dest == "/" or dest == mc.self_info['name']:
-                        nc = None
-                    elif dest == "!" :
-                        nc = process_event_message.last_node
-                    else :
-                        chan = await get_channel_by_name(mc, dest)
-                        if chan is None :
-                            sink.write(f"Contact '{dest}' not found in contacts.\n")
-                            nc = contact
-                        else:
-                            nc = {"adv_name": chan["channel_name"],
-                                  "type": 0,
-                                  "chan_nb": chan["channel_idx"],}
-                if nc != contact :
-                    last_ack = True
-                    prev_contact = contact
-                    contact = nc
-                if dest_scope is None:
-                    dest_scope = scope
-                if not scope is None and dest_scope != scope:
-                    prev_scope = scope
-                    if not dest_scope is None:
-                        scope = await set_scope(mc, dest_scope)
-
-            elif line == "to" or line == "/to" :
-                if contact is None :
-                    sink.write(mc.self_info['name'])
-                else:
-                    sink.write(contact["adv_name"])
-                sink.write("\n")
-
-            elif line.startswith("/") :
-                path = line.split(" ", 1)[0]
-                if path.count("/") == 1:
-                    args = line[1:].split(" ")
-                    dest = args[0]
-                    dest_scope = None
-                    if "%" in dest :
-                        dest_scope = dest.split("%")[-1]
-                        dest = dest[:-len(dest_scope)-1]
-                        await set_scope (mc, dest_scope)
-                    tct = await get_contact_from_arg(mc, dest)
-                    if len(args)>1 and not tct is None: # a contact, send a message
-                        if tct["type"] == 1 or tct["type"] == 3: # client or room
-                            last_ack = await msg_ack(mc, tct, line.split(" ", 1)[1])
-                        else:
-                            sink.write("Can only send msg to chan, client or room\n")
-                    else :
-                        ch = await get_channel_by_name(mc, dest)
-                        if len(args)>1 and not ch is None: # a channel, send message
-                            await send_chan_msg(mc, ch["channel_idx"], line.split(" ", 1)[1])
-                        else :
-                            try :
-                                await process_cmds(mc, shlex.split(line[1:]), sink=sink)
-                            except ValueError:
-                                logger.error(f"Error processing line{line[1:]}")
-                else:
-                    cmdline = line[1:].split("/",1)[1]
-                    contact_name = path[1:].split("/",1)[0]
-                    dest_scope = None
-                    if "%" in contact_name:
-                        dest_scope = contact_name.split("%")[-1]
-                        contact_name = contact_name[:-len(dest_scope)-1]
-                        await set_scope (mc, dest_scope)
-                    tct = await get_contact_from_arg(mc, contact_name)
-                    if tct is None:
-                        sink.write(f"{contact_name} is not a contact\n")
-                    else:
-                        if await process_contact_chat_line(mc, tct, cmdline, sink=sink):
-                            pass
-                        else:
-                            if cmdline != "":
-                                if tct["type"] == 1:
-                                    last_ack = await msg_ack(mc, tct, cmdline)
-                                else :
-                                    await process_cmds(mc, ["cmd", tct["adv_name"], cmdline], sink=sink)
-
-            # commands that take one parameter (don't need quotes)
-            elif line.startswith("public ") :
-                cmds = line.split(" ", 1)
-                args = [cmds[0], cmds[1]]
-                await process_cmds(mc, args, sink=sink)
-
-            # lines starting with ! are sent as reply to last received msg
-            elif line.startswith("!"):
-                ln = process_event_message.last_node
-                if ln is None :
-                    sink.write("No received msg yet !\n")
-                elif ln["type"] == 0 :
-                    await send_chan_msg(mc, ln["chan_nb"], line[1:])
-                else :
-                    last_ack = await msg_ack(mc, ln, line[1:])
-                    if last_ack == False :
-                        contact = ln
-
-            # commands are passed through if at root
-            elif contact is None or line.startswith(".") :
+            if line.startswith("|") : # to process redirection
+                line = line[1:].strip()
                 try:
-                    args = shlex.split(line)
-                    await process_cmds(mc, args, sink=sink)
-                except ValueError:
-                    logger.error(f"Error processing {line}")
+                    l = shlex.split(line, 1)
+                except ValueError (e):
+                    logger.error("Couldn't parse name")
+                    continue
+                file_path = l[0].replace("~", HOME_DIR)
+                with subprocess.Popen(shlex.split(file_path), stdin=subprocess.PIPE, text=True) as process:
+                    (new_contact, new_scope) = await process_line(mc, l[1], contact, prev_contact, scope, prev_scope, sink=process.stdin)
 
-            else:
-                if await process_contact_chat_line(mc, contact, line, sink=sink):
-                    pass
+            else :
+                (new_contact, new_scope) = await process_line(mc, line, contact, prev_contact, scope, prev_scope, sink=sink)
 
-                elif line == "list" : # list command from chat displays contacts on a line
-                    it = iter(mc.contacts.items())
-                    first = True
-                    for c in it :
-                        if not first:
-                            sink.write(", ")
-                        first = False
-                        sink.write(f"{c[1]['adv_name']}")
-                    sink.write("\n")
+            if new_contact != contact :
+                prev_contact = contact
+                contact = new_contact
 
-                elif line.startswith("send") or line.startswith("\"") :
-                    if line.startswith("send") :
-                        line = line[5:]
-                    if line.startswith("\"") :
-                        line = line[1:]
-                    last_ack = await msg_ack(mc, contact, line)
+            if new_scope != scope :
+                prev_scope = scope
+                scope = new_scope
 
-                elif contact["type"] == 0 : # channel, send msg to channel
-                    await send_chan_msg(mc, contact["chan_nb"], line)
-
-                elif contact["type"] == 1 : # chat, send to recipient and wait ack
-                    last_ack = await msg_ack(mc, contact, line)
-
-                elif contact["type"] == 2 or\
-                     contact["type"] == 3 or\
-                     contact["type"] == 4 : # repeater, room, sensor send cmd
-                    await process_cmds(mc, ["cmd", contact["adv_name"], line], sink=sink)
-            sink.flush()
     except (EOFError, KeyboardInterrupt):
         sink.write("Exiting cli\n")
         sink.flush()
@@ -1131,6 +988,195 @@ if platform.system() == "Darwin" or platform.system() == "Windows":
     interactive_loop.classic = True
 else:
     interactive_loop.classic = False
+
+async def process_line(mc, line, contact, prev_contact, scope, prev_scope, sink=sys.stdout):
+    # raw meshcli command as on command line
+    if line.startswith("$") :
+        try :
+            args = shlex.split(line[1:])
+            await process_cmds(mc, args, sink=sink)
+        except ValueError:
+            logger.error("Error parsing line {line[1:]}")
+
+    elif line.startswith("/scope") or\
+            line.startswith("scope") and contact is None:
+        if not scope is None:
+            prev_scope = scope
+            try:
+                newscope = line.split(" ", 1)[1]
+                scope = await set_scope(mc, newscope)
+            except IndexError:
+                sink.write(scope)
+                sink.write("\n")
+
+    elif contact is None and (line.startswith("apply_to ") or line.startswith("at ")) or\
+         line.startswith("/apply_to ") or line.startswith("/at ") :
+        try:
+            await apply_command_to_contacts(mc, line.split(" ",2)[1], line.split(" ",2)[2], sink=sink)
+        except IndexError:
+            logger.error(f"Error with apply_to command parameters")
+
+    elif line.startswith("to ") or line.startswith("/to "): # dest
+        dest = line.split(" ", 1)[1]
+        if dest.startswith("\"") or dest.startswith("\'") : # if name starts with a quote
+            dest = shlex.split(dest)[0] # use shlex.split to get contact name between quotes
+        dest_scope = None
+        if '%' in dest and scope!=None :
+            dest_scope = dest.split("%")[-1]
+            dest = dest[:-len(dest_scope)-1]
+        nc = await get_contact_from_arg(mc, dest)
+        if nc is None:
+            if dest == "public" :
+                nc = {"adv_name" : "public", "type" : 0, "chan_nb" : 0}
+                if hasattr(mc, "channels"):
+                    nc["adv_name"] = mc.channels[0]["channel_name"]
+            elif dest.startswith("ch"):
+                dest = int(dest[2:])
+                nc = {"adv_name" : "chan" + str(dest), "type" : 0, "chan_nb" : dest}
+                if hasattr(mc, "channels"):
+                    nc["adv_name"] = mc.channels[dest]["channel_name"]
+            elif dest == ".." : # previous recipient
+                nc = prev_contact
+                if dest_scope is None and not prev_scope is None:
+                    dest_scope = prev_scope
+            elif dest == "~" or dest == "/" or dest == mc.self_info['name']:
+                nc = None
+            elif dest == "!" :
+                nc = process_event_message.last_node
+            else :
+                chan = await get_channel_by_name(mc, dest)
+                if chan is None :
+                    sink.write(f"Contact '{dest}' not found in contacts.\n")
+                    nc = contact
+                else:
+                    nc = {"adv_name": chan["channel_name"],
+                          "type": 0,
+                          "chan_nb": chan["channel_idx"],}
+        if nc != contact :
+            last_ack = True
+            prev_contact = contact
+            contact = nc
+        if dest_scope is None:
+            dest_scope = scope
+        if not scope is None and dest_scope != scope:
+            prev_scope = scope
+            if not dest_scope is None:
+                scope = await set_scope(mc, dest_scope)
+
+    elif line == "to" or line == "/to" :
+        if contact is None :
+            sink.write(mc.self_info['name'])
+        else:
+            sink.write(contact["adv_name"])
+        sink.write("\n")
+
+    elif line.startswith("/") :
+        path = line.split(" ", 1)[0]
+        if path.count("/") == 1:
+            args = line[1:].split(" ")
+            dest = args[0]
+            dest_scope = None
+            if "%" in dest :
+                dest_scope = dest.split("%")[-1]
+                dest = dest[:-len(dest_scope)-1]
+                await set_scope (mc, dest_scope)
+            tct = await get_contact_from_arg(mc, dest)
+            if len(args)>1 and not tct is None: # a contact, send a message
+                if tct["type"] == 1 or tct["type"] == 3: # client or room
+                    last_ack = await msg_ack(mc, tct, line.split(" ", 1)[1])
+                else:
+                    sink.write("Can only send msg to chan, client or room\n")
+            else :
+                ch = await get_channel_by_name(mc, dest)
+                if len(args)>1 and not ch is None: # a channel, send message
+                    await send_chan_msg(mc, ch["channel_idx"], line.split(" ", 1)[1])
+                else :
+                    try :
+                        await process_cmds(mc, shlex.split(line[1:]), sink=sink)
+                    except ValueError:
+                        logger.error(f"Error processing line{line[1:]}")
+        else:
+            cmdline = line[1:].split("/",1)[1]
+            contact_name = path[1:].split("/",1)[0]
+            dest_scope = None
+            if "%" in contact_name:
+                dest_scope = contact_name.split("%")[-1]
+                contact_name = contact_name[:-len(dest_scope)-1]
+                await set_scope (mc, dest_scope)
+            tct = await get_contact_from_arg(mc, contact_name)
+            if tct is None:
+                sink.write(f"{contact_name} is not a contact\n")
+            else:
+                if await process_contact_chat_line(mc, tct, cmdline, sink=sink):
+                    pass
+                else:
+                    if cmdline != "":
+                        if tct["type"] == 1:
+                            last_ack = await msg_ack(mc, tct, cmdline)
+                        else :
+                            await process_cmds(mc, ["cmd", tct["adv_name"], cmdline], sink=sink)
+
+    # commands that take one parameter (don't need quotes)
+    elif line.startswith("public ") :
+        cmds = line.split(" ", 1)
+        args = [cmds[0], cmds[1]]
+        await process_cmds(mc, args, sink=sink)
+
+    # lines starting with ! are sent as reply to last received msg
+    elif line.startswith("!"):
+        ln = process_event_message.last_node
+        if ln is None :
+            sink.write("No received msg yet !\n")
+        elif ln["type"] == 0 :
+            await send_chan_msg(mc, ln["chan_nb"], line[1:])
+        else :
+            last_ack = await msg_ack(mc, ln, line[1:])
+            if last_ack == False :
+                contact = ln
+
+    # commands are passed through if at root
+    elif contact is None or line.startswith(".") :
+        try:
+            args = shlex.split(line)
+            await process_cmds(mc, args, sink=sink)
+        except ValueError:
+            logger.error(f"Error processing {line}")
+
+    else:
+        if await process_contact_chat_line(mc, contact, line, sink=sink):
+            pass
+
+        elif line == "list" : # list command from chat displays contacts on a line
+            it = iter(mc.contacts.items())
+            first = True
+            for c in it :
+                if not first:
+                    sink.write(", ")
+                first = False
+                sink.write(f"{c[1]['adv_name']}")
+            sink.write("\n")
+
+        elif line.startswith("send") or line.startswith("\"") :
+            if line.startswith("send") :
+                line = line[5:]
+            if line.startswith("\"") :
+                line = line[1:]
+            last_ack = await msg_ack(mc, contact, line)
+
+        elif contact["type"] == 0 : # channel, send msg to channel
+            await send_chan_msg(mc, contact["chan_nb"], line)
+
+        elif contact["type"] == 1 : # chat, send to recipient and wait ack
+            last_ack = await msg_ack(mc, contact, line)
+
+        elif contact["type"] == 2 or\
+             contact["type"] == 3 or\
+             contact["type"] == 4 : # repeater, room, sensor send cmd
+            await process_cmds(mc, ["cmd", contact["adv_name"], line], sink=sink)
+
+    sink.flush()
+    return (contact, scope)
+
 
 async def process_contact_chat_line(mc, contact, line, sink=sys.stdout):
     if contact["type"] == 0:
@@ -4204,7 +4250,7 @@ async def process_repeater_line(ser, cmd, echo=False, repeater_name=None) :
             else :
                 file_path = cmd.lower().split(" ", 3)[2]
 
-            file_path = file_path.replace("~", str(Path.home()))
+            file_path = file_path.replace("~", HOME_DIR)
             with open(file_path, "r") as file:
                 ser.write("region load\r".encode())
                 for line in file:
@@ -4231,7 +4277,7 @@ async def process_repeater_line(ser, cmd, echo=False, repeater_name=None) :
             else :
                 file_path = cmd.lower().split(" ", 3)[2]
 
-            file_path = file_path.replace("~", str(Path.home()))
+            file_path = file_path.replace("~", HOME_DIR)
 
             with open(file_path, "w") as file:
                 # write header (name and timestamp)
@@ -4271,7 +4317,7 @@ async def process_repeater_line(ser, cmd, echo=False, repeater_name=None) :
             else :
                 file_path = cmd.lower().split(" ", 2)[1]
 
-            file_path = file_path.replace("~", str(Path.home()))
+            file_path = file_path.replace("~", HOME_DIR)
 
             return await process_repeater_script(ser, file_path)
 
