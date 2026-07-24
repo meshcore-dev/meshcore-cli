@@ -97,7 +97,8 @@ def escape_ansi(line):
     return ansi_escape.sub('', line)
 
 async def process_event_message(mc, ev, json_output, end="\n"):
-    """ display incoming message """
+    """ display incoming message 
+    """
     output_str = ""
     if ev is None :
         logger.error("Event does not contain message.")
@@ -948,7 +949,8 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                         newscope = line.split(" ", 1)[1]
                         scope = await set_scope(mc, newscope)
                     except IndexError:
-                        print(scope)
+                        sink.write(scope)
+                        sink.write("\n")
 
             elif line == "quit" or line == "q" or line == "/quit" or line == "/q" :
                 break
@@ -990,7 +992,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                     else :
                         chan = await get_channel_by_name(mc, dest)
                         if chan is None :
-                            print(f"Contact '{dest}' not found in contacts.")
+                            sink.write(f"Contact '{dest}' not found in contacts.\n")
                             nc = contact
                         else:
                             nc = {"adv_name": chan["channel_name"],
@@ -1009,9 +1011,10 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
 
             elif line == "to" or line == "/to" :
                 if contact is None :
-                    print(mc.self_info['name'])
+                    sink.write(mc.self_info['name'])
                 else:
-                    print(contact["adv_name"])
+                    sink.write(contact["adv_name"])
+                sink.write("\n")
 
             elif line.startswith("/") :
                 path = line.split(" ", 1)[0]
@@ -1028,7 +1031,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                         if tct["type"] == 1 or tct["type"] == 3: # client or room
                             last_ack = await msg_ack(mc, tct, line.split(" ", 1)[1])
                         else:
-                            print("Can only send msg to chan, client or room")
+                            sink.write("Can only send msg to chan, client or room\n")
                     else :
                         ch = await get_channel_by_name(mc, dest)
                         if len(args)>1 and not ch is None: # a channel, send message
@@ -1048,7 +1051,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                         await set_scope (mc, dest_scope)
                     tct = await get_contact_from_arg(mc, contact_name)
                     if tct is None:
-                        print(f"{contact_name} is not a contact")
+                        sink.write(f"{contact_name} is not a contact\n")
                     else:
                         if await process_contact_chat_line(mc, tct, cmdline, sink=sink):
                             pass
@@ -1069,7 +1072,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
             elif line.startswith("!"):
                 ln = process_event_message.last_node
                 if ln is None :
-                    print("No received msg yet !")
+                    sink.write("No received msg yet !\n")
                 elif ln["type"] == 0 :
                     await send_chan_msg(mc, ln["chan_nb"], line[1:])
                 else :
@@ -1094,10 +1097,10 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                     first = True
                     for c in it :
                         if not first:
-                            print(", ", end="")
+                            sink.write(", ")
                         first = False
-                        print(f"{c[1]['adv_name']}", end="")
-                    print("")
+                        sink.write(f"{c[1]['adv_name']}")
+                    sink.write("\n")
 
                 elif line.startswith("send") or line.startswith("\"") :
                     if line.startswith("send") :
@@ -1116,12 +1119,14 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                      contact["type"] == 3 or\
                      contact["type"] == 4 : # repeater, room, sensor send cmd
                     await process_cmds(mc, ["cmd", contact["adv_name"], line], sink=sink)
-
+            sink.flush()
     except (EOFError, KeyboardInterrupt):
-        print("Exiting cli")
+        sink.write("Exiting cli\n")
+        sink.flush()
     except asyncio.CancelledError:
         # Handle task cancellation from KeyboardInterrupt in asyncio.run()
-        print("Exiting cli")
+        sink.write("Exiting cli\n")
+        sink.flush()
 if platform.system() == "Darwin" or platform.system() == "Windows":
     interactive_loop.classic = True
 else:
