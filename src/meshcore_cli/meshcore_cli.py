@@ -781,11 +781,13 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
     return completion_list
 make_completion_dict.custom_vars = {}
 
-async def interactive_loop(mc, to=None, sink=sys.stdout) :
+async def interactive_loop(mc, to=None) :
     print("""Interactive mode, most commands from terminal chat should work.
 Use \"to\" to select recipient, use Tab to complete name ...
 Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
 \"quit\", \"q\", CTRL+D will end interactive mode""")
+
+    sync = sys.stdout
 
     contact = to
     prev_contact = None
