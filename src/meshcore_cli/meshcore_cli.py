@@ -538,8 +538,8 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "max_attempts" : None,
             "max_flood_attempts" : None,
             "flood_after" : None,
-            "path_hash_mode": {"0":None, "1":None, "2":None},
-            "path.hash.mode": {"0":None, "1":None, "2":None},
+            "path_hash_mode":{"0":None, "1":None, "2":None},
+            "path.hash.mode":{"0":None, "1":None, "2":None},
             "default_scope": None,
         },
         "get" : {"name":None,
@@ -957,7 +957,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
             elif contact is None and (line.startswith("apply_to ") or line.startswith("at ")) or\
                  line.startswith("/apply_to ") or line.startswith("/at ") :
                 try:
-                    await apply_command_to_contacts(mc, line.split(" ",2)[1], line.split(" ",2)[2])
+                   print( await apply_command_to_contacts(mc, line.split(" ",2)[1], line.split(" ",2)[2]), end="")
                 except IndexError:
                     logger.error(f"Error with apply_to command parameters")
 
@@ -1051,7 +1051,10 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                     if tct is None:
                         print(f"{contact_name} is not a contact")
                     else:
-                        if not await process_contact_chat_line(mc, tct, cmdline):
+                        r = await process_contact_chat_line(mc, tct, cmdline)
+                        if not r is None:
+                            print(r, end="")
+                        else:
                             if cmdline != "":
                                 if tct["type"] == 1:
                                     last_ack = await msg_ack(mc, tct, cmdline)
@@ -1084,36 +1087,38 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                 except ValueError:
                     logger.error(f"Error processing {line}")
 
-            elif await process_contact_chat_line(mc, contact, line):
-                pass
+            else:
+                r = await process_contact_chat_line(mc, contact, line)
+                if not r is None:
+                    print(r, end="")
 
-            elif line == "list" : # list command from chat displays contacts on a line
-                it = iter(mc.contacts.items())
-                first = True
-                for c in it :
-                    if not first:
-                        print(", ", end="")
-                    first = False
-                    print(f"{c[1]['adv_name']}", end="")
-                print("")
+                elif line == "list" : # list command from chat displays contacts on a line
+                    it = iter(mc.contacts.items())
+                    first = True
+                    for c in it :
+                        if not first:
+                            print(", ", end="")
+                        first = False
+                        print(f"{c[1]['adv_name']}", end="")
+                    print("")
 
-            elif line.startswith("send") or line.startswith("\"") :
-                if line.startswith("send") :
-                    line = line[5:]
-                if line.startswith("\"") :
-                    line = line[1:]
-                last_ack = await msg_ack(mc, contact, line)
+                elif line.startswith("send") or line.startswith("\"") :
+                    if line.startswith("send") :
+                        line = line[5:]
+                    if line.startswith("\"") :
+                        line = line[1:]
+                    last_ack = await msg_ack(mc, contact, line)
 
-            elif contact["type"] == 0 : # channel, send msg to channel
-                await send_chan_msg(mc, contact["chan_nb"], line)
+                elif contact["type"] == 0 : # channel, send msg to channel
+                    await send_chan_msg(mc, contact["chan_nb"], line)
 
-            elif contact["type"] == 1 : # chat, send to recipient and wait ack
-                last_ack = await msg_ack(mc, contact, line)
+                elif contact["type"] == 1 : # chat, send to recipient and wait ack
+                    last_ack = await msg_ack(mc, contact, line)
 
-            elif contact["type"] == 2 or\
-                 contact["type"] == 3 or\
-                 contact["type"] == 4 : # repeater, room, sensor send cmd
-                print(await process_cmds(mc, ["cmd", contact["adv_name"], line]),end="")
+                elif contact["type"] == 2 or\
+                     contact["type"] == 3 or\
+                     contact["type"] == 4 : # repeater, room, sensor send cmd
+                    print(await process_cmds(mc, ["cmd", contact["adv_name"], line]),end="")
 
     except (EOFError, KeyboardInterrupt):
         print("Exiting cli")
@@ -1126,6 +1131,7 @@ else:
     interactive_loop.classic = False
 
 async def process_contact_chat_line(mc, contact, line):
+    output_str = None
     if contact["type"] == 0:
         return False
 
@@ -1137,62 +1143,71 @@ async def process_contact_chat_line(mc, contact, line):
 
     if line.startswith(":") : # : will send a command to current recipient
         args=["cmd", contact['adv_name'], line[1:]]
-        print(await process_cmds(mc, args),end="")
-        return True
+        output_str = await process_cmds(mc, args)
+        return output_str
 
     if line == "reset path" : # reset path for compat with terminal chat
         args = ["reset_path", contact['adv_name']]
-        print(await process_cmds(mc, args),end="")
-        return True
+        output_str = await process_cmds(mc, args)
+        return output_str
 
     if line.startswith("contact_key") or line.startswith("ck"):
-        print(contact['public_key'],end="")
+        output_str = contact['public_key']
         if " " in line:
-            print(" ", end="", flush=True)
+            output_str += " "
             secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc, contact, secline)
+            r = await process_contact_chat_line(mc, contact, secline)
+            if not res is None:
+                output_str += r
         else:
-            print("")
-        return True
+            output_str += "\n"
+        return output_str
 
     if line.startswith("contact_type") or line.startswith("ct"):
-        print(f"{CONTACT_TYPENAMES[contact['type']]:4}",end="")
+        output_str = f"{CONTACT_TYPENAMES[contact['type']]:4}"
         if " " in line:
-            print(" ", end="", flush=True)
+            output_str += " "
             secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc, contact, secline)
+            r = await process_contact_chat_line(mc, contact, secline)
+            if not r is None:
+                output_str += r
         else:
-            print("")
-        return True
+            output_str += "\n"
+        return output_str
 
     if line.startswith("contact_name") or line.startswith("cn"):
-        print(contact['adv_name'],end="")
+        output_str = contact['adv_name']
         if " " in line:
-            print(" ", end="", flush=True)
+            output_str += " "
             secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc, contact, secline)
+            r = await process_contact_chat_line(mc, contact, secline)
+            if not r is None:
+                output_str += r
+
         else:
-            print("")
-        return True
+            output_str += "\n"
+        return output_str
 
     if line.startswith("contact_lastmod"):
         timestamp = contact["lastmod"]
-        print(f"{contact['adv_name']} updated"
-              f" {datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d at %H:%M:%S')}"
-              f" ({timestamp})", end="")
+        output_str = f"{contact['adv_name']} updated"\
+              + f" {datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d at %H:%M:%S')}"\
+              + f" ({timestamp})"
         if " " in line:
-            print(" ", end="", flush=True)
+            output_str += " "
             secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc,contact, secline)
+            r = await process_contact_chat_line(mc,contact, secline)
+            if not r is None:
+                output_str += r
         else:
-            print("")
-        return True
+            output_str += "\n"
+        return output_str
 
     if line.startswith("path") :
         if contact['out_path_len'] == -1:
-            print("Flood", end="")
+            output_str = "Flood"
         elif contact['out_path_len'] == 0:
-            print("0 hop", end="")
+            output_str = "0 hop"
         else:
             plen = contact['out_path_len']
             phs = contact['out_path_hash_mode']+1
@@ -1200,16 +1215,19 @@ async def process_contact_chat_line(mc, contact, line):
             path_str = path_str_in[:2*phs]
             for i in range(1,plen):
                 path_str = path_str + "," + path_str_in[i*phs*2:(i+1)*2*phs]
-            print(f"{path_str}",end="")
+            output_str = f"{path_str}"
         if " " in line:
-            print(" ", end="", flush=True)
+            output_str += " "
             secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc, contact, secline)
+            r = await process_contact_chat_line(mc, contact, secline)
+            if not r is None:
+                output_str += r
         else:
-            print("")
-        return True
+            output_str += "\n"
+        return output_str
 
     if line.startswith("sleep ") or line.startswith("s "):
+        output_str = ""
         try:
             sleeptime = int(line.split(" ",2)[1])
             cmd_pos = 2
@@ -1223,14 +1241,14 @@ async def process_contact_chat_line(mc, contact, line):
         try:
             if cmd_pos > 0:
                 secline = line.split(" ",cmd_pos)[cmd_pos]
-                await process_contact_chat_line(mc, contact, secline)
+                output_str += await process_contact_chat_line(mc, contact, secline)
         except IndexError:
             pass
 
         # will sleep after executed command if there is a command
         await asyncio.sleep(sleeptime)
 
-        return True
+        return ""
 
     # commands that take contact as second arg will be sent to recipient
     # and can be chained ...
@@ -1251,30 +1269,33 @@ async def process_contact_chat_line(mc, contact, line):
             line.startswith("advert_path") or line.startswith("ap") or\
             line.startswith("logout") :
         args = [line.split()[0], contact['adv_name']]
-        print(await process_cmds(mc, args),end="")
+        output_str = await process_cmds(mc, args)
         if " " in line:
             secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc, contact, secline)
-        return True
+            r = await process_contact_chat_line(mc, contact, secline)
+            if not r is None:
+                output_str += r
+        return output_str
 
     # special case for rp that can be chained from cmdline
     if line.startswith("rp ") or line.startswith("reset_path ") :
         args = ["rp", contact['adv_name']]
-        print(await process_cmds(mc, args),end="")
+        output_str = await process_cmds(mc, args)
         secline = line.split(" ", 1)[1]
-        await process_contact_chat_line(mc, contact, secline)
-        return True
+        r = await process_contact_chat_line(mc, contact, secline)
+        if not r is None:
+            output_str += r
+        return output_str
 
     if line.startswith("set timeout "):
         cmds=line.split(" ")
         #args = ["contact_timeout", contact['adv_name'], cmds[2]]
         #await process_cmds(mc, args)
         contact["timeout"] = float(cmds[2])
-        return True
+        return ""
 
     if line == "get timeout":
-        print(f"timeout: {0 if not 'timeout' in contact else contact['timeout']}")
-        return True
+        return f"timeout: {0 if not 'timeout' in contact else contact['timeout']}"
 
     if contact["type"] == 4 and\
             (line.startswith("get mma ")) or\
@@ -1286,8 +1307,7 @@ async def process_contact_chat_line(mc, contact, line):
             args = args + cmds[2:]
         if line.startswith("get mma ") and len(args) < 4:
             args.append("0")
-        print(await process_cmds(mc, args),end="")
-        return True
+        return await process_cmds(mc, args)
 
     # special treatment for setperm to support contact name as param
     if contact["type"] > 1 and\
@@ -1312,19 +1332,17 @@ async def process_contact_chat_line(mc, contact, line):
             else:
                 key=ct["public_key"]
             newline=f"setperm {key} {perm}"
-            print(await process_cmds(mc, ["cmd", contact["adv_name"], newline]),end="")
+            output_str = await process_cmds(mc, ["cmd", contact["adv_name"], newline])
         except IndexError:
-            print("Wrong number of parameters")
-        return True
+            output_str = "Wrong number of parameters"
+        return output_str
 
     # trace called on a contact
     if line == "trace" or line == "tr" :
-        print (await print_trace_to(mc, contact))
-        return True
+        return await print_trace_to(mc, contact)
 
     if line == "dtrace" or line == "dt" :
-        print (await print_disc_trace_to(mc, contact))
-        return True
+        return await print_disc_trace_to(mc, contact)
 
     # same but for commands with a parameter
     if " " in line:
@@ -1340,8 +1358,7 @@ async def process_contact_chat_line(mc, contact, line):
                 cmds[0] == "req_binary" or\
                 cmds[0] == "login" :
             args = [cmds[0], contact['adv_name'], cmds[1]]
-            print(await process_cmds(mc, args),end="")
-            return True
+            return await process_cmds(mc, args)
 
     if line == "login": # use stored password or prompt for it
         password_file = ""
@@ -1369,15 +1386,14 @@ async def process_contact_chat_line(mc, contact, line):
                 password = await sess.prompt_async()
             except EOFError:
                 logger.info("Canceled")
-                return True
+                return ""
 
             if password_file != "":
                 with open(password_file, "w", encoding="utf-8") as f :
                     f.write(password)
 
         args = ["login", contact['adv_name'], password]
-        print(await process_cmds(mc, args),end="")
-        return True
+        return await process_cmds(mc, args)
 
     if line.startswith("forget_password") or line.startswith("fp"):
         password_file = MCCLI_CONFIG_DIR + contact['adv_name'] + ".pass"
@@ -1391,7 +1407,7 @@ async def process_contact_chat_line(mc, contact, line):
             await process_contact_chat_line(mc, contact, secline)
         except IndexError:
             pass
-        return True
+        return ""
 
     if contact["type"] == 4 and \
         (line.startswith("req_mma ") or line.startswith('rm ')) :
@@ -1399,12 +1415,12 @@ async def process_contact_chat_line(mc, contact, line):
         if len(cmds) < 3 :
             cmds.append("0")
         args = [cmds[0], contact['adv_name'], cmds[1], cmds[2]]
-        print(await process_cmds(mc, args),end="")
-        return True
+        return await process_cmds(mc, args)
 
-    return False
+    return None
 
 async def apply_command_to_contacts(mc, contact_filter, line, json_output=False):
+    output_str = ""
     upd_before = None
     upd_after = None
     contact_type = None
@@ -1436,13 +1452,13 @@ async def apply_command_to_contacts(mc, contact_filter, line, json_output=False)
                 upd_after = t
             else:
                 logger.error(f"Time filter can only be < or >")
-                return
+                return ""
         elif f[0] == "t": # type
             if f[1] == "=":
                 contact_type = int(f[2:])
             else:
                 logger.error(f"Type can only be equals to a value")
-                return
+                return ""
         elif f[0] == "d": # direct
             min_hops=0
         elif f[0] == "f": # flood
@@ -1460,7 +1476,7 @@ async def apply_command_to_contacts(mc, contact_filter, line, json_output=False)
                 flags = int(f[2:])
         else:
             logger.error(f"Unknown filter {f}")
-            return
+            return ""
 
     for c in dict(mc._contacts).items():
         contact = c[1]
@@ -1473,12 +1489,13 @@ async def apply_command_to_contacts(mc, contact_filter, line, json_output=False)
 
             count = count + 1
 
-            if await process_contact_chat_line(mc, contact, line):
-                pass
+            res = await process_contact_chat_line(mc, contact, line)
+            if not res is None:
+                output_str += res
 
             elif line == "remove_contact":
                 args = [line, contact['adv_name']]
-                print(await process_cmds(mc, args),end="")
+                output_str += await process_cmds(mc, args)
 
             elif line.startswith("send") or line.startswith("\"") :
                 if line.startswith("send") :
@@ -1490,7 +1507,7 @@ async def apply_command_to_contacts(mc, contact_filter, line, json_output=False)
             elif contact["type"] == 2 or\
                  contact["type"] == 3 or\
                  contact["type"] == 4 : # repeater, room, sensor send cmd
-                print(await process_cmds(mc, ["cmd", contact["adv_name"], line]),end="")
+                output_str += await process_cmds(mc, ["cmd", contact["adv_name"], line])
                 # wait for a reply from cmd
                 await mc.wait_for_event(EventType.MESSAGES_WAITING, timeout=7)
 
@@ -1498,7 +1515,9 @@ async def apply_command_to_contacts(mc, contact_filter, line, json_output=False)
                 logger.error(f"Can't send {line} to {contact['adv_name']}")
 
     if not json_output:
-        print(f"> {count} matches in contacts")
+        output_str += f"> {count} matches in contacts\n"
+
+    return output_str
 
 async def send_cmd (mc, contact, cmd) :
     res = await mc.commands.send_cmd(contact, cmd)
@@ -1827,7 +1846,7 @@ async def get_contact_from_arg(mc, arg):
     return contact
 
 async def next_cmd(mc, cmds, json_output=False):
-    """ process next command 
+    """ process next command
         returns (following, output_str)
     """
     global ARROW_HEAD, SLASH_START, SLASH_END, INVERT_SLASH
@@ -1934,7 +1953,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
             case "apply_to"|"at":
                 argnum = 2
-                await apply_command_to_contacts(mc, cmds[1], cmds[2], json_output=json_output)
+                output_str += await apply_command_to_contacts(mc, cmds[1], cmds[2], json_output=json_output)
 
             case "set":
                 argnum = 2
@@ -2030,7 +2049,7 @@ async def next_cmd(mc, cmds, json_output=False):
                             output_str += json.dumps(res.payload, indent=4)+"\n"
                         else:
                             output_str += "ok\n"
-                    case "path_hash_mode" | "path.hash.mode":
+                    case "path_hash_mode"|"path.hash.mode":
                         mode = int(cmds[2])
                         if mode >= 3:
                             logger.error(f"Can't set value to {mode}")
@@ -2753,7 +2772,7 @@ async def next_cmd(mc, cmds, json_output=False):
                         sess = PromptSession("Password: ", is_password=True)
                         password = await sess.prompt_async()
 
-                    timeout = 0 if not "timeout" in contact else contact["timeout"] 
+                    timeout = 0 if not "timeout" in contact else contact["timeout"]
                     res = await mc.commands.send_login_sync(contact, password, timeout = timeout)
                     logger.debug(res)
                     if res is None:
@@ -3211,7 +3230,7 @@ async def next_cmd(mc, cmds, json_output=False):
                     if json_output :
                         output_str += json.dumps({"adv_name" : contact["adv_name"],
                             "out_path_hash_len" : contact["out_path_hash_len"],
-                            "out_path_len" : path_len, 
+                            "out_path_len" : path_len,
                             "out_path" : path}) + "\n"
                     else:
                         if (path_len == 0) :
@@ -3341,7 +3360,7 @@ async def next_cmd(mc, cmds, json_output=False):
                 else:
                     if json_output:
                         output_str += json.dumps(res.payload)+"\n"
-                    else : 
+                    else :
                         path_len = res.payload['path_len']
                         if (path_len == 0) :
                             output_str += "0 hop\n"
@@ -3918,7 +3937,7 @@ To remove a channel, use remove_channel, either with channel name or number.
     elif cmdname == "trace" or cmdname == "tr" :
         print("""Trace
 
-Trace is a command used to get signal information (SNR) along a path. 
+Trace is a command used to get signal information (SNR) along a path.
 
 Basic call to trace takes the path to follow as an argument, specifying each repeater along the path with its hash (separated or not with a comma).
 
@@ -3971,9 +3990,9 @@ meshcore-cli provides some functions to manage path :
  * advert_path  : path taken by an advert
  * disc_path    : discover in and out path for a contact
 
-When using change_path, you specify manually the path to the contact. Path is given as an hex string containing hashes for all repeaters in the way (you can use commas to separate hashes). By default hash_size will be the one of the node. If using commas, it will be guessed from first hash. You can also use a colon to specify path_hash_mode. 
+When using change_path, you specify manually the path to the contact. Path is given as an hex string containing hashes for all repeaters in the way (you can use commas to separate hashes). By default hash_size will be the one of the node. If using commas, it will be guessed from first hash. You can also use a colon to specify path_hash_mode.
 
-If you want to set the path for a node through 112233 445566 778899, you can use 
+If you want to set the path for a node through 112233 445566 778899, you can use
  - 114477:0 or 11,44,77 for one byte hash
  - 112244557788:1 or 1122,4455,7788 for two byte hash
  - 112233445566778899:2 or 112233,445566,778899 for three byte hash
@@ -3981,7 +4000,7 @@ If you want to set the path for a node through 112233 445566 778899, you can use
 To set an empty path use 0.
 
 To get the path for a contact, you can use three commands:
- - path will gives you the path stored in the node. 
+ - path will gives you the path stored in the node.
  - You can also get a path from a key using advert_path which will give you the path taken for last advert from that node to come.
  disc_path will send a path request and give you input and output path for a node.
 
