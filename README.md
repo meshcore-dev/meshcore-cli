@@ -57,6 +57,7 @@ Arguments mostly deals with connection to the node
 <pre>
     -h : prints this help
     -v : prints version
+    -i : force interactive mode even if there are commands (replaces chat command)
     -j : json output (disables init file)
     -D : debug
     -S : scan for devices and show a selector
@@ -80,8 +81,6 @@ Commands are given after arguments, they can be chained and some have shortcuts.
 <pre>
     ?&lt;cmd&gt; may give you some more help about cmd
   General commands
-    chat                   : enter the chat (interactive) mode
-    chat_to &lt;ct&gt;           : enter chat with contact                to
     script &lt;filename&gt;      : execute commands in filename
     infos                  : print informations about the node      i
     self_telemetry         : print own telemtry                     t
@@ -165,6 +164,13 @@ The `/` character is used to bypass the node you have currently selected using `
 - `/<cmd>` issues cmd command on the root
 - `/<node>/<cmd>` will send cmd to selected node
 - `/<dest> <msg>` will send msg to dest (channel or node)
+
+You can redirect output of a command using `>`, `>>` or `|` symbols at the start of a line, followed by a file or a shell command :
+- `>`: redirects the output to a file in overwrite mode
+- `>>`: redirects to the file in append mode
+- `|`: redirects to the input of shell command (pipe)
+
+If you start the line with `.` it activates `json_output` for this execution, letting you output json for feeding `jq`.
 
 #### Flood Scope in interactive mode
 
