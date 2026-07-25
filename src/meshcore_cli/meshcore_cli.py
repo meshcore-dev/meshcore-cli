@@ -939,13 +939,18 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
             if line == "quit" or line == "q" or line == "/quit" or line == "/q" :
                 break
 
+            jo = json_output
+            if line.startswith(".") : # toggle json-output for this loop
+                jo = True
+                line = line[1:].strip()
+
             if line.startswith(">>") : # append to-file redirection
                 line = line[2:].strip()
                 try:
                     fp, mcline = split_first_token(line)
                     fp = fp.replace("~", HOME_DIR)
                     with open(fp, "a") as file:
-                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, prev_contact, scope, prev_scope, json_output=json_output, sink=file)
+                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, prev_contact, scope, prev_scope, json_output=jo, sink=file)
                 except ValueError:
                     logger.error("Couldn't parse filename")
                     continue
@@ -959,7 +964,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                     fp, mcline = split_first_token(line)
                     fp = fp.replace("~", HOME_DIR)
                     with open(fp, "w") as file:
-                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, prev_contact, scope, prev_scope, json_output=json_output, sink=file)
+                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, prev_contact, scope, prev_scope, json_output=jo, sink=file)
                 except ValueError:
                     logger.error("Couldn't parse filename")
                     continue
@@ -972,7 +977,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                 try:
                     pcom, mcline = split_first_token(line)
                     with subprocess.Popen(shlex.split(pcom), stdin=subprocess.PIPE, text=True) as process:
-                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, prev_contact, scope, prev_scope, json_output=json_output, sink=process.stdin)
+                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, prev_contact, scope, prev_scope, json_output=jo, sink=process.stdin)
                 except ValueError:
                     logger.error("Couldn't parse name")
                     continue
@@ -989,7 +994,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                     logger.error(f"Broken pipe")
                     continue
             else :
-                (new_contact, new_scope, last_ack) = await process_line(mc, line, contact, prev_contact, scope, prev_scope, json_output=json_output, sink=sink)
+                (new_contact, new_scope, last_ack) = await process_line(mc, line, contact, prev_contact, scope, prev_scope, json_output=jo, sink=sink)
 
             if new_contact != contact :
                 prev_contact = contact
