@@ -939,7 +939,21 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
             if line == "quit" or line == "q" or line == "/quit" or line == "/q" :
                 break
 
-            if line.startswith(">") : # to-file redirection
+            if line.startswith(">>") : # append to-file redirection
+                line = line[2:].strip()
+                try:
+                    fp, mcline = split_first_token(line)
+                    fp = fp.replace("~", HOME_DIR)
+                    with open(fp, "a") as file:
+                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, prev_contact, scope, prev_scope, json_output=json_output, sink=file)
+                except ValueError:
+                    logger.error("Couldn't parse filename")
+                    continue
+                except FileNotFoundError:
+                    logger.error("File not found")
+                    continue
+
+            elif line.startswith(">") : # to-file redirection
                 line = line[1:].strip()
                 try:
                     fp, mcline = split_first_token(line)
