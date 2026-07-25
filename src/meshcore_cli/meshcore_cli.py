@@ -943,31 +943,40 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
             if line.startswith(">") : # to-file redirection
                 line = line[1:].strip()
                 try:
-                    l = shlex.split(line, 1)
-                except ValueError (e):
+                    fp, mcline = split_first_token(line)
+                    fp = fp.replace("~", HOME_DIR)
+                    with open(fp, "w") as file:
+                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, prev_contact, scope, prev_scope, sink=file)
+                except ValueError:
                     logger.error("Couldn't parse filename")
                     continue
-                try :
-                    file_path = l[0].replace("~", HOME_DIR)
-                    with open(file_path, "w") as file:
-                        (new_contact, new_scope) = await process_line(mc, l[1], contact, prev_contact, scope, prev_scope, sink=file)
                 except FileNotFoundError:
                     logger.error("File not found")
                     continue
 
-            if line.startswith("|") : # to process redirection
+            elif line.startswith("|") : # to process redirection
                 line = line[1:].strip()
                 try:
-                    l = shlex.split(line, 1)
-                except ValueError (e):
+                    pcom, mcline = split_first_token(line)
+                    with subprocess.Popen(shlex.split(pcom), stdin=subprocess.PIPE, text=True) as process:
+                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, prev_contact, scope, prev_scope, sink=process.stdin)
+                except ValueError:
                     logger.error("Couldn't parse name")
                     continue
-                file_path = l[0].replace("~", HOME_DIR)
-                with subprocess.Popen(shlex.split(file_path), stdin=subprocess.PIPE, text=True) as process:
-                    (new_contact, new_scope) = await process_line(mc, l[1], contact, prev_contact, scope, prev_scope, sink=process.stdin)
-
+                except FileNotFoundError:
+                    logger.error(f"File not found {pcom}")
+                    continue
+                except PermissionError:
+                    logger.error(f"Permission denied: {pcom}")
+                    continue
+                except OSError as e:
+                    logger.error(f"Cannot pipe: {e}")
+                    continue
+                except BrokenPipeError:
+                    logger.error(f"Broken pipe")
+                    continue
             else :
-                (new_contact, new_scope) = await process_line(mc, line, contact, prev_contact, scope, prev_scope, sink=sink)
+                (new_contact, new_scope, last_ack) = await process_line(mc, line, contact, prev_contact, scope, prev_scope, sink=sink)
 
             if new_contact != contact :
                 prev_contact = contact
@@ -984,12 +993,26 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
         # Handle task cancellation from KeyboardInterrupt in asyncio.run()
         sink.write("Exiting cli\n")
         sink.flush()
+
 if platform.system() == "Darwin" or platform.system() == "Windows":
     interactive_loop.classic = True
 else:
     interactive_loop.classic = False
 
+def split_first_token(line):
+    lexer = shlex.shlex(line, posix=True)
+    lexer.whitespace_split = True
+
+    target = lexer.get_token()
+    command = lexer.instream.read().lstrip()
+
+    if target is None or not command:
+        raise ValueError ("Expected a target and a command")
+
+    return target, command
+
 async def process_line(mc, line, contact, prev_contact, scope, prev_scope, sink=sys.stdout):
+    last_ack = True
     # raw meshcli command as on command line
     if line.startswith("$") :
         try :
@@ -1175,7 +1198,7 @@ async def process_line(mc, line, contact, prev_contact, scope, prev_scope, sink=
             await process_cmds(mc, ["cmd", contact["adv_name"], line], sink=sink)
 
     sink.flush()
-    return (contact, scope)
+    return (contact, scope, last_ack)
 
 
 async def process_contact_chat_line(mc, contact, line, sink=sys.stdout):
