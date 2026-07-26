@@ -1277,7 +1277,12 @@ async def process_contact_chat_line(mc, contact, line, inside=False, json_output
         return True
 
     if line.startswith("contact_key") or line.startswith("ck"):
-        await process_second(make_value("public_key", contact['public_key']))
+        if line.startswith("contact_key:") or line.startswith("ck:"):
+            klen = int(line.split(" ")[0].split(":")[1])
+            key = contact['public_key'][0:2*klen]
+        else:
+            key = contact['public_key']
+        await process_second(make_value("public_key", key))
         return True
 
     if line.startswith("contact_type") or line.startswith("ct"):
