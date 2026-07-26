@@ -1433,15 +1433,15 @@ async def process_contact_chat_line(mc, contact, line, inside=False, json_output
     if line == "trace" or line == "tr" :
         out_str = ""
         with io.StringIO() as strm:
-            await print_trace_to(mc, contact, json_output=json_output, sink=strm)
-            await process_second(make_value("trace", strm.getvalue()))
+            await print_trace_to(mc, contact, json_output=json_output, sink=strm, end="")
+            await process_second(strm.getvalue())
         return True
 
     if line == "dtrace" or line == "dt" :
         out_str = ""
         with io.StringIO() as strm:
-            await print_disc_trace_to(mc, contact, json_output=json_output, sink=strm)
-            await process_second(make_value("trace", strm.getvalue()))
+            await print_disc_trace_to(mc, contact, json_output=json_output, sink=strm, end="")
+            await process_second(strm.getvalue())
         return True
 
     # same but for commands with a parameter
@@ -1858,14 +1858,17 @@ async def get_channels (mc, anim=False) :
         print (" Done")
     return mc.channels
 
-async def print_trace_to (mc, contact, json_output=False, sink=sys.stdout):
+async def print_trace_to (mc, contact, json_output=False, sink=sys.stdout, end="\n"):
     path = contact["out_path"]
     path_len = contact["out_path_len"]
     path_hash_len = await mc.commands.get_path_hash_mode() + 1
     trace = ""
 
     if path_len == -1:
-        sink.write("No path to destination\n")
+        if json_output:
+            sink.write(json.dumps({"error": "No path to destination"}) + end)
+        else:
+            sink.write("No path to destination" + end)
         sink.flush()
         return
 
@@ -1888,7 +1891,7 @@ async def print_trace_to (mc, contact, json_output=False, sink=sys.stdout):
     if path_hash_len >= 2:
         trace = trace + ":1"
 
-    await process_cmds(mc, ["trace", trace], json_output=json_output, sink=sink)
+    await process_cmds(mc, ["trace", trace], json_output=json_output, sink=sink, end=end)
 
 async def discover_path(mc, contact):
     await mc.ensure_contacts()
@@ -1899,7 +1902,7 @@ async def discover_path(mc, contact):
     else :
         return res.payload
 
-async def print_disc_trace_to (mc, contact, json_output=False, sink=sys.stdout):
+async def print_disc_trace_to (mc, contact, json_output=False, sink=sys.stdout, end="\n"):
     p = await discover_path(mc, contact)
     if p is None:
         logger.error("Error discovering path")
@@ -1934,7 +1937,7 @@ async def print_disc_trace_to (mc, contact, json_output=False, sink=sys.stdout):
 
     logger.info(f"Trying {trace}")
 
-    await process_cmds(mc, ["trace", trace], json_output=json_output, sink=sink)
+    await process_cmds(mc, ["trace", trace], json_output=json_output, sink=sink, end=end)
 
 
 async def get_contact_from_arg(mc, arg):
@@ -1952,7 +1955,7 @@ async def get_contact_from_arg(mc, arg):
 
     return contact
 
-async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout):
+async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
     """ process next command
         returns (following, output_str)
     """
@@ -2829,17 +2832,17 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout):
                         timeout=timeout)
                     if ev is None:
                         if json_output:
-                            output_str += json.dumps({"error" : "timeout waiting trace"})+"\n"
+                            output_str += json.dumps({"error" : "timeout waiting trace"})+end
                         else :
-                            output_str += f"Timeout waiting trace for path {cmds[1]}\n"
+                            output_str += f"Timeout waiting trace for path {cmds[1]}" + end
                     elif ev.type == EventType.ERROR:
                         if json_output:
-                            output_str += json.dumps(ev.payload)+"\n"
+                            output_str += json.dumps(ev.payload) + end
                         else :
-                            output_str += "Error waiting trace\n"
+                            output_str += "Error waiting trace" + end
                     else:
                         if json_output:
-                            output_str += json.dumps(ev.payload, indent=2)+"\n"
+                            output_str += json.dumps(ev.payload, indent=2) + end
                         else :
                             color = process_event_message.color
                             classic = interactive_loop.classic or not color
@@ -2866,7 +2869,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout):
                                     output_str += ANSI_END
                                 if "hash" in t:
                                     output_str += f"[{t['hash']}]"
-                            output_str += "\n"
+                            output_str += end
 
             case "login" | "l" :
                 argnum = 2
@@ -3718,11 +3721,11 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout):
         logger.error("Cancelled")
         return (None, "")
 
-async def process_cmds (mc, args, json_output=False, sink=sys.stdout) :
+async def process_cmds (mc, args, json_output=False, sink=sys.stdout, end="\n") :
     cmds = args
     output_str = ""
     while cmds and len(cmds) > 0 and cmds[0][0] != '#' :
-        (cmds, cur_output) = await next_cmd(mc, cmds, json_output, sink=sink)
+        (cmds, cur_output) = await next_cmd(mc, cmds, json_output, sink=sink, end=end)
         if not cur_output is None:
             sink.write(cur_output)
             sink.flush()
