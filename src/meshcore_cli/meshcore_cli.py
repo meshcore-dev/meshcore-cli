@@ -1528,7 +1528,7 @@ async def process_contact_chat_line(mc, contact, line, inside=False, json_output
 
     return False
 
-async def apply_command_to_contacts(mc, contact_filter, line, json_output=False, sink=sys.stdout):
+async def apply_command_to_contacts(mc, contact_filter, line, json_output=False, sink=sys.stdout, end="\n"):
     upd_before = None
     upd_after = None
     contact_type = None
@@ -1586,6 +1586,10 @@ async def apply_command_to_contacts(mc, contact_filter, line, json_output=False,
             logger.error(f"Unknown filter {f}")
             return ""
 
+    if json_output:
+        sink.write("[\n")
+    out_str=""
+    has_prev=False
     for c in dict(mc._contacts).items():
         contact = c[1]
         if (contact_type is None or contact["type"] == contact_type) and\
@@ -1597,34 +1601,44 @@ async def apply_command_to_contacts(mc, contact_filter, line, json_output=False,
 
             count = count + 1
 
-            if await process_contact_chat_line(mc, contact, line, json_output=json_output, sink=sink):
-                pass
+            with io.StringIO() as strm:
+                if await process_contact_chat_line(mc, contact, line, json_output=json_output, sink=strm, end=""):
+                    pass
 
-            elif line == "remove_contact":
-                args = [line, contact['adv_name']]
-                await process_cmds(mc, args, json_output=json_output, sink=sink)
+                elif line == "remove_contact":
+                    args = [line, contact['adv_name']]
+                    await process_cmds(mc, args, json_output=json_output, sink=strm, end="")
 
-            elif line.startswith("send") or line.startswith("\"") :
-                if line.startswith("send") :
-                    line = line[5:]
-                if line.startswith("\"") :
-                    line = line[1:]
-                await msg_ack(mc, contact, line)
+                elif line.startswith("send") or line.startswith("\"") :
+                    if line.startswith("send") :
+                        line = line[5:]
+                    if line.startswith("\"") :
+                        line = line[1:]
+                    await msg_ack(mc, contact, line)
 
-            elif contact["type"] == 2 or\
-                 contact["type"] == 3 or\
-                 contact["type"] == 4 : # repeater, room, sensor send cmd
-                await process_cmds(mc, ["cmd", contact["adv_name"], line], json_output=json_output, sink=sink)
-                # wait for a reply from cmd
-                await mc.wait_for_event(EventType.MESSAGES_WAITING, timeout=7)
+                elif contact["type"] == 2 or\
+                     contact["type"] == 3 or\
+                     contact["type"] == 4 : # repeater, room, sensor send cmd
+                    await process_cmds(mc, ["cmd", contact["adv_name"], line], json_output=json_output, sink=strm, end="")
+                    # wait for a reply from cmd
+                    await mc.wait_for_event(EventType.MESSAGES_WAITING, timeout=7)
 
-            else:
-                logger.error(f"Can't send {line} to {contact['adv_name']}")
-
-    if not json_output:
-        sink.write(f"> {count} matches in contacts\n")
-        sink.flush()
-
+                else:
+                    logger.error(f"Can't send {line} to {contact['adv_name']}")
+                out_str = strm.getvalue()
+                if out_str != "" :
+                    if has_prev:
+                        if json_output:
+                            sink.write(",")
+                        sink.write("\n")
+                    else:
+                        has_prev = True
+                sink.write(out_str)
+    if json_output:
+        sink.write("\n]"+end)
+    else:
+        sink.write(f"> {count} matches in contacts{end}")
+    sink.flush()
     return
 
 async def send_cmd (mc, contact, cmd) :
