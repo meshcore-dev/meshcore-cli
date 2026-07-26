@@ -12,18 +12,16 @@ import requests
 import serial.tools.list_ports
 from pathlib import Path
 import traceback
+import subprocess
 from prompt_toolkit.shortcuts import PromptSession
 from prompt_toolkit.shortcuts import CompleteStyle
 from prompt_toolkit.completion import NestedCompleter, PathCompleter
-from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.shortcuts import radiolist_dialog
 from prompt_toolkit.completion.word_completer import WordCompleter
-from prompt_toolkit.document import Document
 from prompt_toolkit.patch_stdout import patch_stdout
-
 
 try:
     from bleak import BleakScanner, BleakClient
@@ -32,15 +30,14 @@ try:
 except ImportError:
     BLEAK_AVAILABLE = False
 
-import re
-
 from meshcore import MeshCore, EventType, logger
 
 # Version
 VERSION = "v1.5.7"
 
 # default ble address is stored in a config file
-MCCLI_CONFIG_DIR = str(Path.home()) + "/.config/meshcore/"
+HOME_DIR = str(Path.home())
+MCCLI_CONFIG_DIR = HOME_DIR + "/.config/meshcore/"
 MCCLI_ADDRESS = MCCLI_CONFIG_DIR + "default_address"
 MCCLI_HISTORY_FILE = MCCLI_CONFIG_DIR + "history"
 MCCLI_INIT_SCRIPT = MCCLI_CONFIG_DIR + "init"
@@ -101,17 +98,19 @@ def escape_ansi(line):
     return ansi_escape.sub('', line)
 
 async def process_event_message(mc, ev, json_output, end="\n"):
-    """ display incoming message """
+    """ display incoming message 
+    """
+    output_str = ""
     if ev is None :
         logger.error("Event does not contain message.")
     elif ev.type == EventType.NO_MORE_MSGS:
         logger.debug("No more messages")
-        return False
+        return output_str
     elif ev.type == EventType.ERROR:
         logger.error(f"Error retrieving messages: {ev.payload}")
-        return False
+        return output_str
     elif json_output :
-        print(json.dumps(ev.payload), end=end, flush=True)
+        output_str += json.dumps(ev.payload) + end
     else :
         await mc.ensure_contacts()
         data = ev.payload
@@ -172,7 +171,7 @@ async def process_event_message(mc, ev, json_output, end="\n"):
             if not process_event_message.color:
                 disp = escape_ansi(disp)
 
-            print(disp)
+            output_str += disp + end
 
         elif (data['type'] == "CHAN") :
             path_str = f"{ANSI_YELLOW}({path_str}){ANSI_END}"
@@ -192,10 +191,10 @@ async def process_event_message(mc, ev, json_output, end="\n"):
             if not process_event_message.color:
                 disp = escape_ansi(disp)
 
-            print(disp)
+            output_str += disp + end
         else:
-            print(json.dumps(ev.payload))
-    return True
+            output_str += json.dumps(ev.payload) + end
+    return output_str
 process_event_message.print_snr=False
 process_event_message.color=True
 process_event_message.last_node=None
@@ -221,6 +220,8 @@ async def handle_log_rx(event):
                     chan_name = event.payload["chan_hash"]
                 if "crypted" in event.payload:
                     message = event.payload["crypted"]
+                else:
+                    message = "-- unhandled --"
 
             if chan_name != "" :
                 width = os.get_terminal_size().columns
@@ -369,8 +370,8 @@ log_message.file=None
 async def handle_message(event):
     """ Process incoming message events """
     if handle_message.display :
-        await process_event_message(handle_message.mc, event,
-                                json_output=handle_message.json_output)
+        print(await process_event_message(handle_message.mc, event,
+                                json_output=handle_message.json_output), end="")
     await log_message(handle_message.mc, event.payload.copy())
 
 handle_message.json_output=False
@@ -537,7 +538,8 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "max_attempts" : None,
             "max_flood_attempts" : None,
             "flood_after" : None,
-            "path_hash_mode": None,
+            "path_hash_mode":{"0":None, "1":None, "2":None},
+            "path.hash.mode":{"0":None, "1":None, "2":None},
             "default_scope": None,
         },
         "get" : {"name":None,
@@ -580,6 +582,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "stats_packets":None,
             "allowed_repeat_freq":None,
             "path_hash_mode":None,
+            "path.hash.mode":None,
             "default_scope":None,
         },
         "?get":None,
@@ -690,6 +693,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "bridge.baud":None,
             "bridge.secret":None,
             "bridge.type":None,
+            "path.hash.mode":None,
             },
         "set" : {"name" : None,
             "radio" : {",,,":None, "f,bw,sf,cr": None},
@@ -715,6 +719,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
             "bridge.source":None,
             "bridge.baud":None,
             "bridge.secret":None,
+            "path.hash.mode":{"0": None, "1": None, "2": None},
             },
         "erase": None,
         "log" : {"start" : None, "stop" : None, "erase" : None}
@@ -778,27 +783,26 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
     return completion_list
 make_completion_dict.custom_vars = {}
 
-async def interactive_loop(mc, to=None) :
+async def interactive_loop(mc, to=None, json_output=False) :
     print("""Interactive mode, most commands from terminal chat should work.
 Use \"to\" to select recipient, use Tab to complete name ...
 Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
 \"quit\", \"q\", CTRL+D will end interactive mode""")
 
-
     contact = to
     prev_contact = None
-
     scope = await set_scope(mc, "*")
     prev_scope = scope
+    sink = sys.stdout
 
     await get_contacts(mc, anim=True)
     await get_channels(mc, anim=True)
 
     # Call sync_msg before going further so there is no issue when scrolling
     # long list of msgs
-    await next_cmd(mc, ["sync_msgs"])
+    await process_cmds(mc, ["sync_msgs"], json_output=json_output, sink=sink)
 
-    await subscribe_to_msgs(mc)
+    await subscribe_to_msgs(mc, json_output=json_output)
 
     try:
         if os.path.isdir(MCCLI_CONFIG_DIR) :
@@ -829,6 +833,9 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
         while True:
             # reset scope (if changed)
             scope = await set_scope(mc, scope)
+
+            # reset sink to stdout
+            sink = sys.stdout
 
             color = process_event_message.color
             classic = interactive_loop.classic or not color
@@ -923,206 +930,335 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
             line = line.strip()
 
             if line == "" : # blank line
-                pass
+                continue
 
-            elif line.startswith("?") :
+            if line.startswith("?") :
                 get_help_for(line[1:], context="chat")
+                continue
 
-            # raw meshcli command as on command line
-            elif line.startswith("$") :
-                try :
-                    args = shlex.split(line[1:])
-                    await process_cmds(mc, args)
-                except ValueError:
-                    logger.error("Error parsing line {line[1:]}")
-
-            elif line.startswith("/scope") or\
-                    line.startswith("scope") and contact is None:
-                if not scope is None:
-                    prev_scope = scope
-                    try:
-                        newscope = line.split(" ", 1)[1]
-                        scope = await set_scope(mc, newscope)
-                    except IndexError:
-                        print(scope)
-
-            elif line == "quit" or line == "q" or line == "/quit" or line == "/q" :
+            if line == "quit" or line == "q" or line == "/quit" or line == "/q" :
                 break
 
-            elif contact is None and (line.startswith("apply_to ") or line.startswith("at ")) or\
-                 line.startswith("/apply_to ") or line.startswith("/at ") :
+            jo = json_output
+            if line.startswith(".") : # toggle json-output for this loop
+                jo = True
+                line = line[1:].strip()
+
+            if line.startswith(">>") : # append to-file redirection
+                line = line[2:].strip()
                 try:
-                    await apply_command_to_contacts(mc, line.split(" ",2)[1], line.split(" ",2)[2])
-                except IndexError:
-                    logger.error(f"Error with apply_to command parameters")
-
-            elif line.startswith("to ") or line.startswith("/to "): # dest
-                dest = line.split(" ", 1)[1]
-                if dest.startswith("\"") or dest.startswith("\'") : # if name starts with a quote
-                    dest = shlex.split(dest)[0] # use shlex.split to get contact name between quotes
-                dest_scope = None
-                if '%' in dest and scope!=None :
-                    dest_scope = dest.split("%")[-1]
-                    dest = dest[:-len(dest_scope)-1]
-                nc = await get_contact_from_arg(mc, dest)
-                if nc is None:
-                    if dest == "public" :
-                        nc = {"adv_name" : "public", "type" : 0, "chan_nb" : 0}
-                        if hasattr(mc, "channels"):
-                            nc["adv_name"] = mc.channels[0]["channel_name"]
-                    elif dest.startswith("ch"):
-                        dest = int(dest[2:])
-                        nc = {"adv_name" : "chan" + str(dest), "type" : 0, "chan_nb" : dest}
-                        if hasattr(mc, "channels"):
-                            nc["adv_name"] = mc.channels[dest]["channel_name"]
-                    elif dest == ".." : # previous recipient
-                        nc = prev_contact
-                        if dest_scope is None and not prev_scope is None:
-                            dest_scope = prev_scope
-                    elif dest == "~" or dest == "/" or dest == mc.self_info['name']:
-                        nc = None
-                    elif dest == "!" :
-                        nc = process_event_message.last_node
-                    else :
-                        chan = await get_channel_by_name(mc, dest)
-                        if chan is None :
-                            print(f"Contact '{dest}' not found in contacts.")
-                            nc = contact
-                        else:
-                            nc = {"adv_name": chan["channel_name"],
-                                  "type": 0,
-                                  "chan_nb": chan["channel_idx"],}
-                if nc != contact :
-                    last_ack = True
-                    prev_contact = contact
-                    contact = nc
-                if dest_scope is None:
-                    dest_scope = scope
-                if not scope is None and dest_scope != scope:
-                    prev_scope = scope
-                    if not dest_scope is None:
-                        scope = await set_scope(mc, dest_scope)
-
-            elif line == "to" or line == "/to" :
-                if contact is None :
-                    print(mc.self_info['name'])
-                else:
-                    print(contact["adv_name"])
-
-            elif line.startswith("/") :
-                path = line.split(" ", 1)[0]
-                if path.count("/") == 1:
-                    args = line[1:].split(" ")
-                    dest = args[0]
-                    dest_scope = None
-                    if "%" in dest :
-                        dest_scope = dest.split("%")[-1]
-                        dest = dest[:-len(dest_scope)-1]
-                        await set_scope (mc, dest_scope)
-                    tct = await get_contact_from_arg(mc, dest)
-                    if len(args)>1 and not tct is None: # a contact, send a message
-                        if tct["type"] == 1 or tct["type"] == 3: # client or room
-                            last_ack = await msg_ack(mc, tct, line.split(" ", 1)[1])
-                        else:
-                            print("Can only send msg to chan, client or room")
-                    else :
-                        ch = await get_channel_by_name(mc, dest)
-                        if len(args)>1 and not ch is None: # a channel, send message
-                            await send_chan_msg(mc, ch["channel_idx"], line.split(" ", 1)[1])
-                        else :
-                            try :
-                                await process_cmds(mc, shlex.split(line[1:]))
-                            except ValueError:
-                                logger.error(f"Error processing line{line[1:]}")
-                else:
-                    cmdline = line[1:].split("/",1)[1]
-                    contact_name = path[1:].split("/",1)[0]
-                    dest_scope = None
-                    if "%" in contact_name:
-                        dest_scope = contact_name.split("%")[-1]
-                        contact_name = contact_name[:-len(dest_scope)-1]
-                        await set_scope (mc, dest_scope)
-                    tct = await get_contact_from_arg(mc, contact_name)
-                    if tct is None:
-                        print(f"{contact_name} is not a contact")
-                    else:
-                        if not await process_contact_chat_line(mc, tct, cmdline):
-                            if cmdline != "":
-                                if tct["type"] == 1:
-                                    last_ack = await msg_ack(mc, tct, cmdline)
-                                else :
-                                    await process_cmds(mc, ["cmd", tct["adv_name"], cmdline])
-
-            # commands that take one parameter (don't need quotes)
-            elif line.startswith("public ") :
-                cmds = line.split(" ", 1)
-                args = [cmds[0], cmds[1]]
-                await process_cmds(mc, args)
-
-            # lines starting with ! are sent as reply to last received msg
-            elif line.startswith("!"):
-                ln = process_event_message.last_node
-                if ln is None :
-                    print("No received msg yet !")
-                elif ln["type"] == 0 :
-                    await send_chan_msg(mc, ln["chan_nb"], line[1:])
-                else :
-                    last_ack = await msg_ack(mc, ln, line[1:])
-                    if last_ack == False :
-                        contact = ln
-
-            # commands are passed through if at root
-            elif contact is None or line.startswith(".") :
-                try:
-                    args = shlex.split(line)
-                    await process_cmds(mc, args)
+                    fp, mcline = split_first_token(line)
+                    fp = fp.replace("~", HOME_DIR)
+                    with open(fp, "a") as file:
+                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, prev_contact, scope, prev_scope, json_output=jo, sink=file)
                 except ValueError:
-                    logger.error(f"Error processing {line}")
+                    logger.error("Couldn't parse filename")
+                    continue
+                except FileNotFoundError:
+                    logger.error("File not found")
+                    continue
 
-            elif await process_contact_chat_line(mc, contact, line):
-                pass
+            elif line.startswith(">") : # to-file redirection
+                line = line[1:].strip()
+                try:
+                    fp, mcline = split_first_token(line)
+                    fp = fp.replace("~", HOME_DIR)
+                    with open(fp, "w") as file:
+                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, prev_contact, scope, prev_scope, json_output=jo, sink=file)
+                except ValueError:
+                    logger.error("Couldn't parse filename")
+                    continue
+                except FileNotFoundError:
+                    logger.error("File not found")
+                    continue
 
-            elif line == "list" : # list command from chat displays contacts on a line
-                it = iter(mc.contacts.items())
-                first = True
-                for c in it :
-                    if not first:
-                        print(", ", end="")
-                    first = False
-                    print(f"{c[1]['adv_name']}", end="")
-                print("")
+            elif line.startswith("|") : # to process redirection
+                line = line[1:].strip()
+                try:
+                    pcom, mcline = split_first_token(line)
+                    with subprocess.Popen(shlex.split(pcom), stdin=subprocess.PIPE, text=True) as process:
+                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, prev_contact, scope, prev_scope, json_output=jo, sink=process.stdin)
+                except ValueError:
+                    logger.error("Couldn't parse name")
+                    continue
+                except FileNotFoundError:
+                    logger.error(f"File not found {pcom}")
+                    continue
+                except PermissionError:
+                    logger.error(f"Permission denied: {pcom}")
+                    continue
+                except OSError as e:
+                    logger.error(f"Cannot pipe: {e}")
+                    continue
+                except BrokenPipeError:
+                    logger.error(f"Broken pipe")
+                    continue
+            else :
+                (new_contact, new_scope, last_ack) = await process_line(mc, line, contact, prev_contact, scope, prev_scope, json_output=jo, sink=sink)
 
-            elif line.startswith("send") or line.startswith("\"") :
-                if line.startswith("send") :
-                    line = line[5:]
-                if line.startswith("\"") :
-                    line = line[1:]
-                last_ack = await msg_ack(mc, contact, line)
+            if new_contact != contact :
+                prev_contact = contact
+                contact = new_contact
 
-            elif contact["type"] == 0 : # channel, send msg to channel
-                await send_chan_msg(mc, contact["chan_nb"], line)
-
-            elif contact["type"] == 1 : # chat, send to recipient and wait ack
-                last_ack = await msg_ack(mc, contact, line)
-
-            elif contact["type"] == 2 or\
-                 contact["type"] == 3 or\
-                 contact["type"] == 4 : # repeater, room, sensor send cmd
-                await process_cmds(mc, ["cmd", contact["adv_name"], line])
+            if new_scope != scope :
+                prev_scope = scope
+                scope = new_scope
 
     except (EOFError, KeyboardInterrupt):
-        print("Exiting cli")
+        sink.write("Exiting cli\n")
+        sink.flush()
     except asyncio.CancelledError:
         # Handle task cancellation from KeyboardInterrupt in asyncio.run()
-        print("Exiting cli")
+        sink.write("Exiting cli\n")
+        sink.flush()
+
 if platform.system() == "Darwin" or platform.system() == "Windows":
     interactive_loop.classic = True
 else:
     interactive_loop.classic = False
 
-async def process_contact_chat_line(mc, contact, line):
+def split_first_token(line):
+    lexer = shlex.shlex(line, posix=True)
+    lexer.whitespace_split = True
+
+    target = lexer.get_token()
+    command = lexer.instream.read().lstrip()
+
+    if target is None or not command:
+        raise ValueError ("Expected a target and a command")
+
+    return target, command
+
+async def process_line(mc, line, contact, prev_contact, scope, prev_scope, json_output=False, sink=sys.stdout):
+    last_ack = True
+    # raw meshcli command as on command line
+    if line.startswith("$") :
+        try :
+            args = shlex.split(line[1:])
+            await process_cmds(mc, args, json_output=json_output, sink=sink)
+        except ValueError:
+            logger.error("Error parsing line {line[1:]}")
+
+    elif line.startswith("/scope") or\
+            line.startswith("scope") and contact is None:
+        if not scope is None:
+            prev_scope = scope
+            try:
+                newscope = line.split(" ", 1)[1]
+                scope = await set_scope(mc, newscope)
+            except IndexError:
+                sink.write(scope)
+                sink.write("\n")
+
+    elif contact is None and (line.startswith("apply_to ") or line.startswith("at ")) or\
+         line.startswith("/apply_to ") or line.startswith("/at ") :
+        try:
+            await apply_command_to_contacts(mc, line.split(" ",2)[1], line.split(" ",2)[2], json_output=json_output, sink=sink)
+        except IndexError:
+            logger.error(f"Error with apply_to command parameters")
+
+    elif line.startswith("to ") or line.startswith("/to "): # dest
+        dest = line.split(" ", 1)[1]
+        if dest.startswith("\"") or dest.startswith("\'") : # if name starts with a quote
+            dest = shlex.split(dest)[0] # use shlex.split to get contact name between quotes
+        dest_scope = None
+        if '%' in dest and scope!=None :
+            dest_scope = dest.split("%")[-1]
+            dest = dest[:-len(dest_scope)-1]
+        nc = await get_contact_from_arg(mc, dest)
+        if nc is None:
+            if dest == "public" :
+                nc = {"adv_name" : "public", "type" : 0, "chan_nb" : 0}
+                if hasattr(mc, "channels"):
+                    nc["adv_name"] = mc.channels[0]["channel_name"]
+            elif dest.startswith("ch"):
+                dest = int(dest[2:])
+                nc = {"adv_name" : "chan" + str(dest), "type" : 0, "chan_nb" : dest}
+                if hasattr(mc, "channels"):
+                    nc["adv_name"] = mc.channels[dest]["channel_name"]
+            elif dest == ".." : # previous recipient
+                nc = prev_contact
+                if dest_scope is None and not prev_scope is None:
+                    dest_scope = prev_scope
+            elif dest == "~" or dest == "/" or dest == mc.self_info['name']:
+                nc = None
+            elif dest == "!" :
+                nc = process_event_message.last_node
+            else :
+                chan = await get_channel_by_name(mc, dest)
+                if chan is None :
+                    sink.write(f"Contact '{dest}' not found in contacts.\n")
+                    nc = contact
+                else:
+                    nc = {"adv_name": chan["channel_name"],
+                          "type": 0,
+                          "chan_nb": chan["channel_idx"],}
+        if nc != contact :
+            last_ack = True
+            prev_contact = contact
+            contact = nc
+        if dest_scope is None:
+            dest_scope = scope
+        if not scope is None and dest_scope != scope:
+            prev_scope = scope
+            if not dest_scope is None:
+                scope = await set_scope(mc, dest_scope)
+
+    elif line == "to" or line == "/to" :
+        if contact is None :
+            sink.write(mc.self_info['name'])
+        else:
+            sink.write(contact["adv_name"])
+        sink.write("\n")
+
+    elif line.startswith("/") :
+        last_ack = await process_slash_cmd(mc, line, json_output=json_output, sink=sink)
+
+    # commands that take one parameter (don't need quotes)
+    elif line.startswith("public ") :
+        cmds = line.split(" ", 1)
+        args = [cmds[0], cmds[1]]
+        await process_cmds(mc, args, json_output=json_output, sink=sink)
+
+    # lines starting with ! are sent as reply to last received msg
+    elif line.startswith("!"):
+        ln = process_event_message.last_node
+        if ln is None :
+            sink.write("No received msg yet !\n")
+        elif ln["type"] == 0 :
+            await send_chan_msg(mc, ln["chan_nb"], line[1:])
+        else :
+            last_ack = await msg_ack(mc, ln, line[1:])
+            if last_ack == False :
+                contact = ln
+
+    # commands are passed through if at root
+    elif contact is None or line.startswith(".") :
+        try:
+            args = shlex.split(line)
+            await process_cmds(mc, args, json_output=json_output, sink=sink)
+        except ValueError:
+            logger.error(f"Error processing {line}")
+
+    else:
+        if await process_contact_chat_line(mc, contact, line, json_output=json_output,sink=sink):
+            pass
+
+        elif line == "list" : # list command from chat displays contacts on a line
+            it = iter(mc.contacts.items())
+            first = True
+            for c in it :
+                if not first:
+                    sink.write(", ")
+                first = False
+                sink.write(f"{c[1]['adv_name']}")
+            sink.write("\n")
+
+        elif line.startswith("send") or line.startswith("\"") :
+            if line.startswith("send") :
+                line = line[5:]
+            if line.startswith("\"") :
+                line = line[1:]
+            last_ack = await msg_ack(mc, contact, line)
+
+        elif contact["type"] == 0 : # channel, send msg to channel
+            await send_chan_msg(mc, contact["chan_nb"], line)
+
+        elif contact["type"] == 1 : # chat, send to recipient and wait ack
+            last_ack = await msg_ack(mc, contact, line)
+
+        elif contact["type"] == 2 or\
+             contact["type"] == 3 or\
+             contact["type"] == 4 : # repeater, room, sensor send cmd
+            await process_cmds(mc, ["cmd", contact["adv_name"], line], json_output=json_output, sink=sink)
+
+    sink.flush()
+    return (contact, scope, last_ack)
+
+async def process_slash_cmd(mc, line, json_output=False, sink=sys.stdout):
+    path = line.split(" ", 1)[0]
+    if path.count("/") == 1:
+        args = line[1:].split(" ")
+        dest = args[0]
+        dest_scope = None
+        if "%" in dest :
+            dest_scope = dest.split("%")[-1]
+            dest = dest[:-len(dest_scope)-1]
+            await set_scope (mc, dest_scope)
+        tct = await get_contact_from_arg(mc, dest)
+        if len(args)>1 and not tct is None: # a contact, send a message
+            if tct["type"] == 1 or tct["type"] == 3: # client or room
+                last_ack = await msg_ack(mc, tct, line.split(" ", 1)[1])
+            else:
+                sink.write("Can only send msg to chan, client or room\n")
+        else :
+            ch = await get_channel_by_name(mc, dest)
+            if len(args)>1 and not ch is None: # a channel, send message
+                await send_chan_msg(mc, ch["channel_idx"], line.split(" ", 1)[1])
+            else :
+                try :
+                    await process_cmds(mc, shlex.split(line[1:]), json_output=json_output, sink=sink)
+                except ValueError:
+                    logger.error(f"Error processing line{line[1:]}")
+    else:
+        cmdline = line[1:].split("/",1)[1]
+        contact_name = path[1:].split("/",1)[0]
+        dest_scope = None
+        if "%" in contact_name:
+            dest_scope = contact_name.split("%")[-1]
+            contact_name = contact_name[:-len(dest_scope)-1]
+            await set_scope (mc, dest_scope)
+        tct = await get_contact_from_arg(mc, contact_name)
+        if tct is None:
+            sink.write(f"{contact_name} is not a contact\n")
+        else:
+            if await process_contact_chat_line(mc, tct, cmdline, json_output=json_output, sink=sink):
+                pass
+            else:
+                if cmdline != "":
+                    if tct["type"] == 1:
+                        return await msg_ack(mc, tct, cmdline)
+                    else :
+                        await process_cmds(mc, ["cmd", tct["adv_name"], cmdline], json_output=json_output, sink=sink)
+                        return True
+
+    return True
+
+async def process_contact_chat_line(mc, contact, line, inside=False, json_output=False, sink=sys.stdout, end="\n"):
+    # tries several command path for a contact
+    # if a path is successfull, return True
     if contact["type"] == 0:
         return False
+
+    async def process_second(first_str):
+        nonlocal out_str
+        res = first_str
+        if " " in line:
+            secline = line.split(" ", 1)[1]
+            with io.StringIO() as strm:
+                await process_contact_chat_line(mc, contact, secline, inside=True, json_output=json_output, sink=strm, end=end)
+                sec_str = strm.getvalue()
+            if sec_str != "" :
+                if json_output:
+                    res = res + ", " + sec_str
+                    if not inside and first_str != "" :
+                        res = "[" + res + "]\n"
+                elif first_str != "" :
+                    res = res + " " + sec_str
+                else:
+                    res = sec_str
+
+        elif res != "" and (not (json_output and inside)):
+            res += end
+
+        sink.write(res)
+        sink.flush()
+
+    def make_value(key, value):
+        if json_output:
+            return json.dumps({key: value})
+        else:
+            return value
 
     # if one element in line (most cases) strip the scope and apply it
     if not " " in line and "%" in line:
@@ -1132,62 +1268,48 @@ async def process_contact_chat_line(mc, contact, line):
 
     if line.startswith(":") : # : will send a command to current recipient
         args=["cmd", contact['adv_name'], line[1:]]
-        await process_cmds(mc, args)
+        await process_cmds(mc, args, json_output=json_output, sink=sink)
         return True
 
     if line == "reset path" : # reset path for compat with terminal chat
         args = ["reset_path", contact['adv_name']]
-        await process_cmds(mc, args)
+        await process_cmds(mc, args, json_output=json_output, sink=sink)
         return True
 
     if line.startswith("contact_key") or line.startswith("ck"):
-        print(contact['public_key'],end="")
-        if " " in line:
-            print(" ", end="", flush=True)
-            secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc, contact, secline)
+        if line.startswith("contact_key:") or line.startswith("ck:"):
+            klen = int(line.split(" ")[0].split(":")[1])
+            key = contact['public_key'][0:2*klen]
         else:
-            print("")
+            key = contact['public_key']
+        await process_second(make_value("public_key", key))
         return True
 
     if line.startswith("contact_type") or line.startswith("ct"):
-        print(f"{CONTACT_TYPENAMES[contact['type']]:4}",end="")
-        if " " in line:
-            print(" ", end="", flush=True)
-            secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc, contact, secline)
-        else:
-            print("")
+        await process_second(make_value("contact_type", f"{CONTACT_TYPENAMES[contact['type']]:4}"))
         return True
 
     if line.startswith("contact_name") or line.startswith("cn"):
-        print(contact['adv_name'],end="")
-        if " " in line:
-            print(" ", end="", flush=True)
-            secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc, contact, secline)
-        else:
-            print("")
+        await process_second(make_value("adv_name", contact['adv_name']))
         return True
 
     if line.startswith("contact_lastmod"):
+        out_str = ""
         timestamp = contact["lastmod"]
-        print(f"{contact['adv_name']} updated"
-              f" {datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d at %H:%M:%S')}"
-              f" ({timestamp})", end="")
-        if " " in line:
-            print(" ", end="", flush=True)
-            secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc,contact, secline)
+        if json_output:
+            out_str = make_value("lastmod", timestamp)
         else:
-            print("")
+            out_str = f"{contact['adv_name']} updated"\
+              + f" {datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d at %H:%M:%S')}"\
+              + f" ({timestamp})"
+        await process_second(out_str)
         return True
 
     if line.startswith("path") :
         if contact['out_path_len'] == -1:
-            print("Flood", end="")
+            out_str = "Flood"
         elif contact['out_path_len'] == 0:
-            print("0 hop", end="")
+            out_str = "0 hop"
         else:
             plen = contact['out_path_len']
             phs = contact['out_path_hash_mode']+1
@@ -1195,13 +1317,8 @@ async def process_contact_chat_line(mc, contact, line):
             path_str = path_str_in[:2*phs]
             for i in range(1,plen):
                 path_str = path_str + "," + path_str_in[i*phs*2:(i+1)*2*phs]
-            print(f"{path_str}",end="")
-        if " " in line:
-            print(" ", end="", flush=True)
-            secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc, contact, secline)
-        else:
-            print("")
+            out_str = f"{path_str}"
+        await process_second(make_value("path", out_str))
         return True
 
     if line.startswith("sleep ") or line.startswith("s "):
@@ -1218,13 +1335,13 @@ async def process_contact_chat_line(mc, contact, line):
         try:
             if cmd_pos > 0:
                 secline = line.split(" ",cmd_pos)[cmd_pos]
-                await process_contact_chat_line(mc, contact, secline)
+                await process_contact_chat_line(mc, contact, secline, inside=inside, json_output=json_output, sink=sink, end=end)
+                sink.flush()
         except IndexError:
             pass
 
         # will sleep after executed command if there is a command
         await asyncio.sleep(sleeptime)
-
         return True
 
     # commands that take contact as second arg will be sent to recipient
@@ -1246,29 +1363,33 @@ async def process_contact_chat_line(mc, contact, line):
             line.startswith("advert_path") or line.startswith("ap") or\
             line.startswith("logout") :
         args = [line.split()[0], contact['adv_name']]
-        await process_cmds(mc, args)
-        if " " in line:
-            secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc, contact, secline)
+        out_str = ""
+        with io.StringIO() as strm:
+            await process_cmds(mc, args, json_output=json_output, sink=strm)
+            out_str = strm.getvalue()
+        await process_second(out_str)
         return True
 
     # special case for rp that can be chained from cmdline
     if line.startswith("rp ") or line.startswith("reset_path ") :
         args = ["rp", contact['adv_name']]
-        await process_cmds(mc, args)
+        await process_cmds(mc, args, json_output=json_output, sink=sink)
         secline = line.split(" ", 1)[1]
-        await process_contact_chat_line(mc, contact, secline)
+        await process_contact_chat_line(mc, contact, secline, inside=inside, json_output=json_output, sink=sink, end=end)
         return True
 
     if line.startswith("set timeout "):
         cmds=line.split(" ")
-        #args = ["contact_timeout", contact['adv_name'], cmds[2]]
-        #await process_cmds(mc, args)
         contact["timeout"] = float(cmds[2])
         return True
 
     if line == "get timeout":
-        print(f"timeout: {0 if not 'timeout' in contact else contact['timeout']}")
+        timeout_str = f"timeout: {0 if not 'timeout' in contact else contact['timeout']}"
+        if json_output:
+            sink.write(json.dumps({"timeout": timeout_str}))
+        else:
+            sink.write(timeout_str + "\n")
+        sink.flush()
         return True
 
     if contact["type"] == 4 and\
@@ -1281,7 +1402,7 @@ async def process_contact_chat_line(mc, contact, line):
             args = args + cmds[2:]
         if line.startswith("get mma ") and len(args) < 4:
             args.append("0")
-        await process_cmds(mc, args)
+        await process_cmds(mc, args, json_output=json_output, sink=sink)
         return True
 
     # special treatment for setperm to support contact name as param
@@ -1307,18 +1428,25 @@ async def process_contact_chat_line(mc, contact, line):
             else:
                 key=ct["public_key"]
             newline=f"setperm {key} {perm}"
-            await process_cmds(mc, ["cmd", contact["adv_name"], newline])
+            await process_cmds(mc, ["cmd", contact["adv_name"], newline], json_output=json_output, sink=sink)
         except IndexError:
-            print("Wrong number of parameters")
+            sink.write("Wrong number of parameters")
+            sink.flush()
         return True
 
     # trace called on a contact
     if line == "trace" or line == "tr" :
-        await print_trace_to(mc, contact)
+        out_str = ""
+        with io.StringIO() as strm:
+            await print_trace_to(mc, contact, json_output=json_output, sink=strm, end="")
+            await process_second(strm.getvalue())
         return True
 
     if line == "dtrace" or line == "dt" :
-        await print_disc_trace_to(mc, contact)
+        out_str = ""
+        with io.StringIO() as strm:
+            await print_disc_trace_to(mc, contact, json_output=json_output, sink=strm, end="")
+            await process_second(strm.getvalue())
         return True
 
     # same but for commands with a parameter
@@ -1335,8 +1463,8 @@ async def process_contact_chat_line(mc, contact, line):
                 cmds[0] == "req_binary" or\
                 cmds[0] == "login" :
             args = [cmds[0], contact['adv_name'], cmds[1]]
-            await process_cmds(mc, args)
-            return True
+            await process_cmds(mc, args, json_output=json_output, sink=sink)
+        return True
 
     if line == "login": # use stored password or prompt for it
         password_file = ""
@@ -1360,6 +1488,7 @@ async def process_contact_chat_line(mc, contact, line):
 
         if password == "":
             try:
+                sink.flush()
                 sess = PromptSession(f"Password for {contact['adv_name']}: ", is_password=True)
                 password = await sess.prompt_async()
             except EOFError:
@@ -1371,7 +1500,7 @@ async def process_contact_chat_line(mc, contact, line):
                     f.write(password)
 
         args = ["login", contact['adv_name'], password]
-        await process_cmds(mc, args)
+        await process_cmds(mc, args, json_output=json_output, sink=sink)
         return True
 
     if line.startswith("forget_password") or line.startswith("fp"):
@@ -1383,7 +1512,7 @@ async def process_contact_chat_line(mc, contact, line):
             os.remove(password_file)
         try:
             secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc, contact, secline)
+            await process_contact_chat_line(mc, contact, secline, inside=inside, json_output=json_output, sink=sink, end=end)
         except IndexError:
             pass
         return True
@@ -1394,12 +1523,12 @@ async def process_contact_chat_line(mc, contact, line):
         if len(cmds) < 3 :
             cmds.append("0")
         args = [cmds[0], contact['adv_name'], cmds[1], cmds[2]]
-        await process_cmds(mc, args)
+        await process_cmds(mc, args, json_output=json_output, sink=sink)
         return True
 
     return False
 
-async def apply_command_to_contacts(mc, contact_filter, line, json_output=False):
+async def apply_command_to_contacts(mc, contact_filter, line, json_output=False, sink=sys.stdout, end="\n"):
     upd_before = None
     upd_after = None
     contact_type = None
@@ -1431,13 +1560,13 @@ async def apply_command_to_contacts(mc, contact_filter, line, json_output=False)
                 upd_after = t
             else:
                 logger.error(f"Time filter can only be < or >")
-                return
+                return ""
         elif f[0] == "t": # type
             if f[1] == "=":
                 contact_type = int(f[2:])
             else:
                 logger.error(f"Type can only be equals to a value")
-                return
+                return ""
         elif f[0] == "d": # direct
             min_hops=0
         elif f[0] == "f": # flood
@@ -1455,8 +1584,12 @@ async def apply_command_to_contacts(mc, contact_filter, line, json_output=False)
                 flags = int(f[2:])
         else:
             logger.error(f"Unknown filter {f}")
-            return
+            return ""
 
+    if json_output:
+        sink.write("[\n")
+    out_str=""
+    has_prev=False
     for c in dict(mc._contacts).items():
         contact = c[1]
         if (contact_type is None or contact["type"] == contact_type) and\
@@ -1468,32 +1601,45 @@ async def apply_command_to_contacts(mc, contact_filter, line, json_output=False)
 
             count = count + 1
 
-            if await process_contact_chat_line(mc, contact, line):
-                pass
+            with io.StringIO() as strm:
+                if await process_contact_chat_line(mc, contact, line, json_output=json_output, sink=strm, end=""):
+                    pass
 
-            elif line == "remove_contact":
-                args = [line, contact['adv_name']]
-                await process_cmds(mc, args)
+                elif line == "remove_contact":
+                    args = [line, contact['adv_name']]
+                    await process_cmds(mc, args, json_output=json_output, sink=strm, end="")
 
-            elif line.startswith("send") or line.startswith("\"") :
-                if line.startswith("send") :
-                    line = line[5:]
-                if line.startswith("\"") :
-                    line = line[1:]
-                await msg_ack(mc, contact, line)
+                elif line.startswith("send") or line.startswith("\"") :
+                    if line.startswith("send") :
+                        line = line[5:]
+                    if line.startswith("\"") :
+                        line = line[1:]
+                    await msg_ack(mc, contact, line)
 
-            elif contact["type"] == 2 or\
-                 contact["type"] == 3 or\
-                 contact["type"] == 4 : # repeater, room, sensor send cmd
-                await process_cmds(mc, ["cmd", contact["adv_name"], line])
-                # wait for a reply from cmd
-                await mc.wait_for_event(EventType.MESSAGES_WAITING, timeout=7)
+                elif contact["type"] == 2 or\
+                     contact["type"] == 3 or\
+                     contact["type"] == 4 : # repeater, room, sensor send cmd
+                    await process_cmds(mc, ["cmd", contact["adv_name"], line], json_output=json_output, sink=strm, end="")
+                    # wait for a reply from cmd
+                    await mc.wait_for_event(EventType.MESSAGES_WAITING, timeout=7)
 
-            else:
-                logger.error(f"Can't send {line} to {contact['adv_name']}")
-
-    if not json_output:
-        print(f"> {count} matches in contacts")
+                else:
+                    logger.error(f"Can't send {line} to {contact['adv_name']}")
+                out_str = strm.getvalue()
+                if out_str != "" :
+                    if has_prev:
+                        if json_output:
+                            sink.write(",")
+                        sink.write("\n")
+                    else:
+                        has_prev = True
+                sink.write(out_str)
+    if json_output:
+        sink.write("\n]"+end)
+    else:
+        sink.write(f"> {count} matches in contacts{end}")
+    sink.flush()
+    return
 
 async def send_cmd (mc, contact, cmd) :
     res = await mc.commands.send_cmd(contact, cmd)
@@ -1731,14 +1877,18 @@ async def get_channels (mc, anim=False) :
         print (" Done")
     return mc.channels
 
-async def print_trace_to (mc, contact):
+async def print_trace_to (mc, contact, json_output=False, sink=sys.stdout, end="\n"):
     path = contact["out_path"]
     path_len = contact["out_path_len"]
     path_hash_len = await mc.commands.get_path_hash_mode() + 1
     trace = ""
 
     if path_len == -1:
-        print ("No path to destination")
+        if json_output:
+            sink.write(json.dumps({"error": "No path to destination"}) + end)
+        else:
+            sink.write("No path to destination" + end)
+        sink.flush()
         return
 
     if path_hash_len == 3:
@@ -1760,7 +1910,7 @@ async def print_trace_to (mc, contact):
     if path_hash_len >= 2:
         trace = trace + ":1"
 
-    await next_cmd(mc, ["trace", trace])
+    await process_cmds(mc, ["trace", trace], json_output=json_output, sink=sink, end=end)
 
 async def discover_path(mc, contact):
     await mc.ensure_contacts()
@@ -1771,14 +1921,14 @@ async def discover_path(mc, contact):
     else :
         return res.payload
 
-async def print_disc_trace_to (mc, contact):
+async def print_disc_trace_to (mc, contact, json_output=False, sink=sys.stdout, end="\n"):
     p = await discover_path(mc, contact)
     if p is None:
-        print("Error discovering path")
+        logger.error("Error discovering path")
         return
 
     if "error" in p:
-        print("Timeout discovering path")
+        logger.error("Timeout discovering path")
         return
 
     inp = p["in_path"]
@@ -1806,7 +1956,7 @@ async def print_disc_trace_to (mc, contact):
 
     logger.info(f"Trying {trace}")
 
-    await next_cmd(mc, ["trace", trace])
+    await process_cmds(mc, ["trace", trace], json_output=json_output, sink=sink, end=end)
 
 
 async def get_contact_from_arg(mc, arg):
@@ -1824,15 +1974,18 @@ async def get_contact_from_arg(mc, arg):
 
     return contact
 
-async def next_cmd(mc, cmds, json_output=False):
-    """ process next command """
+async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
+    """ process next command
+        returns (following, output_str)
+    """
     global ARROW_HEAD, SLASH_START, SLASH_END, INVERT_SLASH
+    output_str = ""
     try :
         argnum = 0
 
         if cmds[0].startswith("?") : # get some help
             get_help_for(cmds[0][1:], context="line")
-            return cmds[argnum+1:]
+            return (cmds[argnum+1:], output_str)
 
         if cmds[0].startswith(".") : # override json_output
             json_output = True
@@ -1847,19 +2000,19 @@ async def next_cmd(mc, cmds, json_output=False):
                 res = await mc.commands.send_device_query()
                 logger.debug(res)
                 if res.type == EventType.ERROR :
-                    print(f"ERROR: {res}")
+                    output_str += f"ERROR: {res}\n"
                 elif json_output :
-                    print(json.dumps(res.payload, indent=4))
+                    output_str += json.dumps(res.payload, indent=4)+"\n"
                 else :
-                    print("Device info :")
+                    output_str += "Device info :\n"
                     if res.payload["fw ver"] >= 3:
-                        print(f" Model: {res.payload['model']}")
-                        print(f" Version: {res.payload['ver']}")
-                        print(f" Build date: {res.payload['fw_build']}")
+                        output_str += f" Model: {res.payload['model']}\n"
+                        output_str += f" Version: {res.payload['ver']}\n"
+                        output_str += f" Build date: {res.payload['fw_build']}\n"
                         if "repeat" in res.payload :
-                            print(f" Repeat: {'on' if res.payload['repeat'] else 'off'}")
+                            output_str += f" Repeat: {'on' if res.payload['repeat'] else 'off'}\n"
                     else :
-                        print(f" Firmware version : {res.payload['fw ver']}")
+                        output_str += f" Firmware version : {res.payload['fw ver']}\n"
 
             case "clock" :
                 if len(cmds) > 1 and cmds[1] == "sync" :
@@ -1869,29 +2022,30 @@ async def next_cmd(mc, cmds, json_output=False):
                     if res.type == EventType.ERROR:
                         if res.payload["error_code"] == 6 :
                             if json_output:
-                                print(json.dumps({"ok": "No sync needed"}))
+                                output_str += json.dumps({"ok": "No sync needed"})+"\n"
                             else:
-                                print("No time sync needed")
+                                output_str += "No time sync needed\n"
                         elif json_output :
-                            print(json.dumps({"error" : "Error syncing time"}))
+                            output_str += json.dumps({"error" : "Error syncing time"})+"\n"
                         else:
-                            print(f"Error syncing time: {res}")
+                            output_str += f"Error syncing time: {res}\n"
                     elif json_output :
                         res.payload["ok"] = "time synced"
-                        print(json.dumps(res.payload, indent=4))
+                        output_str += json.dumps(res.payload, indent=4)+"\n"
                     else :
-                        print("Time synced")
+                        output_str += "Time synced\n"
                 else:
                     res = await mc.commands.get_time()
                     timestamp = res.payload["time"]
                     if res.type == EventType.ERROR:
-                        print(f"Error getting time: {res}")
+                        output_str += f"Error getting time: {res}\n"
                     elif json_output :
-                        print(json.dumps(res.payload, indent=4))
+                        output_str += json.dumps(res.payload, indent=4)+"\n"
                     else :
-                        print('Current time :'
-                            f' {datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")}'
-                            f' ({timestamp})')
+                        output_str += 'Current time :'\
+                            + f' {datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")}'\
+                            + f' ({timestamp})'\
+                            + '\n'
 
             case "sync_time"|"clock sync"|"st": # keep if for the st shortcut
                 res = await mc.commands.set_time(int(time.time()))
@@ -1899,18 +2053,18 @@ async def next_cmd(mc, cmds, json_output=False):
                 if res.type == EventType.ERROR:
                     if res.payload["error_code"] == 6 :
                         if json_output:
-                            print(json.dumps({"ok": "No sync needed"}))
+                            output_str += json.dumps({"ok": "No sync needed"})+"\n"
                         else:
-                            print("No time sync needed")
+                            output_str += "No time sync needed\n"
                     elif json_output :
-                        print(json.dumps({"error" : "Error syncing time"}))
+                        output_str += json.dumps({"error" : "Error syncing time"})+"\n"
                     else:
-                        print(f"Error syncing time: {res}")
+                        output_str += f"Error syncing time: {res}\n"
                 elif json_output :
                     res.payload["ok"] = "time synced"
-                    print(json.dumps(res.payload, indent=4))
+                    output_str += json.dumps(res.payload, indent=4)+"\n"
                 else:
-                    print("Time synced")
+                    output_str += "Time synced\n"
 
             case "time" :
                 argnum = 1
@@ -1918,17 +2072,17 @@ async def next_cmd(mc, cmds, json_output=False):
                 logger.debug(res)
                 if res.type == EventType.ERROR:
                     if json_output :
-                        print(json.dumps({"error" : "Error setting time"}))
+                        output_str += json.dumps({"error" : "Error setting time"})+"\n"
                     else:
-                        print (f"Error setting time: {res}")
+                        output_str += f"Error setting time: {res}\n"
                 elif json_output :
-                    print(json.dumps(res.payload, indent=4))
+                    output_str += json.dumps(res.payload, indent=4)+"\n"
                 else:
-                    print("Time set")
+                    output_str += "Time set\n"
 
             case "apply_to"|"at":
                 argnum = 2
-                await apply_command_to_contacts(mc, cmds[1], cmds[2], json_output=json_output)
+                await apply_command_to_contacts(mc, cmds[1], cmds[2], json_output=json_output, sink=sink)
 
             case "set":
                 argnum = 2
@@ -1945,7 +2099,7 @@ async def next_cmd(mc, cmds, json_output=False):
                     case "classic_prompt":
                         interactive_loop.classic = (cmds[2] == "on")
                         if json_output :
-                            print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
+                            output_str += json.dumps({"cmd" : cmds[1], "param" : cmds[2]})+"\n"
                     case "arrow_head":
                         ARROW_HEAD = cmds[2]
                     case "slash_start":
@@ -1957,56 +2111,56 @@ async def next_cmd(mc, cmds, json_output=False):
                     case "color" :
                         process_event_message.color = (cmds[2] == "on")
                         if json_output :
-                            print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
+                            output_str += json.dumps({"cmd" : cmds[1], "param" : cmds[2]})+"\n"
                     case "print_timestamp" :
                         process_event_message.timestamp = cmds[2]
                         if json_output :
-                            print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
+                            output_str += json.dumps({"cmd" : cmds[1], "param" : cmds[2]})+"\n"
                     case "print_snr" :
                         process_event_message.print_snr = (cmds[2] == "on")
                         if json_output :
-                            print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
+                            output_str += json.dumps({"cmd" : cmds[1], "param" : cmds[2]})+"\n"
                     case "json_log_rx" :
                         handle_log_rx.json_log_rx = (cmds[2] == "on")
                         if json_output :
-                            print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
+                            output_str += json.dumps({"cmd" : cmds[1], "param" : cmds[2]})+"\n"
                     case "channel_echoes" :
                         handle_log_rx.channel_echoes = (cmds[2] == "on")
                         if json_output :
-                            print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
+                            output_str += json.dumps({"cmd" : cmds[1], "param" : cmds[2]})+"\n"
                     case "advert_echoes" :
                         handle_log_rx.advert_echoes = (cmds[2] == "on")
                         if json_output :
-                            print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
+                            output_str += json.dumps({"cmd" : cmds[1], "param" : cmds[2]})+"\n"
                     case "echo_unk_chans" :
                         handle_log_rx.echo_unk_chans = (cmds[2] == "on")
                         if json_output :
-                            print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
+                            output_str += json.dumps({"cmd" : cmds[1], "param" : cmds[2]})+"\n"
                     case "print_adverts" :
                         handle_advert.print_adverts = (cmds[2] == "on")
                         if json_output :
-                            print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
+                            output_str += json.dumps({"cmd" : cmds[1], "param" : cmds[2]})+"\n"
                     case "print_path_updates" :
                         handle_path_update.print_path_updates = (cmds[2] == "on")
                         if json_output :
-                            print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
+                            output_str += json.dumps({"cmd" : cmds[1], "param" : cmds[2]})+"\n"
                     case "print_new_contacts" :
                         handle_new_contact.print_new_contacts = (cmds[2] == "on")
                         if json_output :
-                            print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
+                            output_str += json.dumps({"cmd" : cmds[1], "param" : cmds[2]})+"\n"
                     case "json_msgs" :
                         handle_message.json_output = (cmds[2] == "on")
                         if json_output :
-                            print(json.dumps({"cmd" : cmds[1], "param" : cmds[2]}))
+                            output_str += json.dumps({"cmd" : cmds[1], "param" : cmds[2]})+"\n"
                     case "pin":
                         res = await mc.commands.set_devicepin(cmds[2])
                         logger.debug(res)
                         if res.type == EventType.ERROR:
-                            print(f"Error: {res}")
+                            output_str += f"Error: {res}\n"
                         elif json_output :
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                         else:
-                            print("ok")
+                            output_str += "ok\n"
                     case "radio":
                         params=cmds[2].split(",")
                         if len (params) > 4:
@@ -2019,41 +2173,41 @@ async def next_cmd(mc, cmds, json_output=False):
                             res=await mc.commands.set_radio(params[0], params[1], params[2], params[3])
                         logger.debug(res)
                         if res.type == EventType.ERROR:
-                            print(f"Error: {res}")
+                            output_str += f"Error: {res}\n"
                         elif json_output :
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                         else:
-                            print("ok")
-                    case "path_hash_mode":
+                            output_str += "ok\n"
+                    case "path_hash_mode"|"path.hash.mode":
                         mode = int(cmds[2])
                         if mode >= 3:
                             logger.error(f"Can't set value to {mode}")
                         else:
                             res = await mc.commands.set_path_hash_mode(mode)
                             if res.type == EventType.ERROR:
-                                print(f"Error: {res}")
+                                output_str += f"Error: {res}\n"
                             elif json_output:
-                                print(json.dumps(res.payload, indent=4))
+                                output_str += json.dumps(res.payload, indent=4)+"\n"
                             else:
-                                print("ok")
+                                output_str += "ok\n"
                     case "name":
                         res = await mc.commands.set_name(cmds[2])
                         logger.debug(res)
                         if res.type == EventType.ERROR:
-                            print(f"Error: {res}")
+                            output_str += f"Error: {res}\n"
                         elif json_output :
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                         else:
-                            print("ok")
+                            output_str += "ok\n"
                     case "tx":
                         res = await mc.commands.set_tx_power(cmds[2])
                         logger.debug(res)
                         if res.type == EventType.ERROR:
-                            print(f"Error: {res}")
+                            output_str += f"Error: {res}\n"
                         elif json_output :
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                         else:
-                            print("ok")
+                            output_str += "ok\n"
                     case "lat":
                         if "adv_lon" in mc.self_info :
                             lon = mc.self_info['adv_lon']
@@ -2063,11 +2217,11 @@ async def next_cmd(mc, cmds, json_output=False):
                         res = await mc.commands.set_coords(lat, lon)
                         logger.debug(res)
                         if res.type == EventType.ERROR:
-                            print(f"Error: {res}")
+                            output_str += f"Error: {res}\n"
                         elif json_output :
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                         else:
-                            print("ok")
+                            output_str += "ok\n"
                     case "lon":
                         if "adv_lat" in mc.self_info :
                             lat = mc.self_info['adv_lat']
@@ -2077,11 +2231,11 @@ async def next_cmd(mc, cmds, json_output=False):
                         res = await mc.commands.set_coords(lat, lon)
                         logger.debug(res)
                         if res.type == EventType.ERROR:
-                            print(f"Error: {res}")
+                            output_str += f"Error: {res}\n"
                         elif json_output :
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                         else:
-                            print("ok")
+                            output_str += "ok\n"
                     case "coords":
                         params=cmds[2].split(",")
                         res = await mc.commands.set_coords(\
@@ -2089,39 +2243,39 @@ async def next_cmd(mc, cmds, json_output=False):
                                 float(params[1]))
                         logger.debug(res)
                         if res.type == EventType.ERROR:
-                            print(f"Error: {res}")
+                            output_str += f"Error: {res}\n"
                         elif json_output :
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                         else:
-                            print("ok")
+                            output_str += "ok\n"
                     case "private_key":
                         params=bytes.fromhex(cmds[2])
                         res = await mc.commands.import_private_key(params)
                         logger.debug(res)
                         if res.type == EventType.ERROR:
-                            print(f"Error: {res}")
+                            output_str += f"Error: {res}\n"
                         elif json_output :
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                         else:
-                            print("ok")
+                            output_str += "ok\n"
                     case "tuning":
                         params=cmds[2].commands.split(",")
                         res = await mc.commands.set_tuning(
                             int(params[0]), int(params[1]))
                         logger.debug(res)
                         if res.type == EventType.ERROR:
-                            print(f"Error: {res}")
+                            output_str += f"Error: {res}\n"
                         elif json_output :
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                         else:
-                            print("ok")
+                            output_str += "ok\n"
                     case "manual_add_contacts":
                         mac = (cmds[2] == "on") or (cmds[2] == "true") or (cmds[2] == "yes") or (cmds[2] == "1")
                         res = await mc.commands.set_manual_add_contacts(mac)
                         if res.type == EventType.ERROR:
-                            print(f"Error : {res}")
+                            output_str += f"Error : {res}\n"
                         else :
-                            print(f"manual add contact: {mac}")
+                            output_str += f"manual add contact: {mac}\n"
                     case "autoadd_config":
                         cmds[2] = cmds[2].lower() # lowercase argument
                         try:
@@ -2141,14 +2295,14 @@ async def next_cmd(mc, cmds, json_output=False):
 
                         res = await mc.commands.set_autoadd_config(flags)
                         if res.type == EventType.ERROR:
-                            print(f"Error : {res}")
+                            output_str += f"Error : {res}\n"
                     case "multi_acks":
                         ma = (cmds[2] == "on") or (cmds[2] == "true") or (cmds[2] == "yes") or (cmds[2] == "1")
                         res = await mc.commands.set_multi_acks(ma)
                         if res.type == EventType.ERROR:
-                            print(f"Error : {res}")
+                            output_str += f"Error : {res}\n"
                         else :
-                            print(f"multi_acks: {ma}")
+                            output_str += f"multi_acks: {ma}\n"
                     case "auto_update_contacts":
                         auc = (cmds[2] == "on") or (cmds[2] == "true") or (cmds[2] == "yes") or (cmds[2] == "1")
                         mc.auto_update_contacts=auc
@@ -2161,9 +2315,9 @@ async def next_cmd(mc, cmds, json_output=False):
                             mode = 0
                         res = await mc.commands.set_telemetry_mode_base(mode)
                         if res.type == EventType.ERROR:
-                            print(f"Error : {res}")
+                            output_str += f"Error : {res}\n"
                         else:
-                            print(f"telemetry mode: {mode}")
+                            output_str += f"telemetry mode: {mode}\n"
                     case "telemetry_mode_loc":
                         if (cmds[2] == "2") or (cmds[2].startswith("al")) or (cmds[2] == "yes") or (cmds[2] == "on") :
                             mode = 2
@@ -2173,9 +2327,9 @@ async def next_cmd(mc, cmds, json_output=False):
                             mode = 0
                         res = await mc.commands.set_telemetry_mode_loc(mode)
                         if res.type == EventType.ERROR:
-                            print(f"Error : {res}")
+                            output_str += f"Error : {res}\n"
                         else:
-                            print(f"telemetry mode for location: {mode}")
+                            output_str += f"telemetry mode for location: {mode}\n"
                     case "telemetry_mode_env":
                         if (cmds[2] == "2") or (cmds[2].startswith("al")) or (cmds[2] == "yes") or (cmds[2] == "on") :
                             mode = 2
@@ -2185,9 +2339,9 @@ async def next_cmd(mc, cmds, json_output=False):
                             mode = 0
                         res = await mc.commands.set_telemetry_mode_env(mode)
                         if res.type == EventType.ERROR:
-                            print(f"Error : {res}")
+                            output_str += f"Error : {res}\n"
                         else:
-                            print(f"telemetry mode for env: {mode}")
+                            output_str += f"telemetry mode for env: {mode}\n"
                     case "advert_loc_policy":
                         if (cmds[2] == "1") or (cmds[2] == "share") :
                             policy = 1
@@ -2195,15 +2349,15 @@ async def next_cmd(mc, cmds, json_output=False):
                             policy = 0
                         res = await mc.commands.set_advert_loc_policy(policy)
                         if res.type == EventType.ERROR:
-                            print(f"Error : {res}")
+                            output_str += f"Error : {res}\n"
                         else:
-                            print(f"Policy for adv_loc: {policy}")
+                            output_str += f"Policy for adv_loc: {policy}\n"
                     case "default_scope":
                         res = await mc.commands.set_default_flood_scope(cmds[2])
                         if res.type == EventType.ERROR:
-                            print(f"Error : {res}")
+                            output_str += f"Error : {res}\n"
                         else:
-                            print("Default scope set")
+                            output_str += "Default scope set\n"
                     case _: # custom var
                         if cmds[1].startswith("_") :
                             vname = cmds[1][1:]
@@ -2211,11 +2365,11 @@ async def next_cmd(mc, cmds, json_output=False):
                             vname = cmds[1]
                         res = await mc.commands.set_custom_var(vname, cmds[2])
                         if res.type == EventType.ERROR:
-                            print(f"Error : {res}")
+                            output_str += f"Error : {res}\n"
                         elif json_output :
-                            print(json.dumps({"result" : "set", "var" : vname, "value" : cmds[2]}))
+                            output_str += json.dumps({"result" : "set", "var" : vname, "value" : cmds[2]})+"\n"
                         else :
-                            print(f"Var {vname} set to {cmds[2]}")
+                            output_str += f"Var {vname} set to {cmds[2]}\n"
 
             case "get" :
                 argnum = 1
@@ -2224,104 +2378,104 @@ async def next_cmd(mc, cmds, json_output=False):
                         get_help_for("get")
                     case "max_flood_attempts":
                         if json_output :
-                            print(json.dumps({"max_flood_attempts" : msg_ack.max_flood_attempts}))
+                            output_str += json.dumps({"max_flood_attempts" : msg_ack.max_flood_attempts})+"\n"
                         else:
-                            print(f"max_flood_attempts: {msg_ack.max_flood_attempts}")
+                            output_str += f"max_flood_attempts: {msg_ack.max_flood_attempts}\n"
                     case "flood_after":
                         if json_output :
-                            print(json.dumps({"flood_after" : msg_ack.flood_after}))
+                            output_str += json.dumps({"flood_after" : msg_ack.flood_after})+"\n"
                         else:
-                            print(f"flood_after: {msg_ack.flood_after}")
+                            output_str += f"flood_after: {msg_ack.flood_after}\n"
                     case "classic_prompt":
                         if json_output :
-                            print(json.dumps({"classic_prompt" : interactive_loop.classic}))
+                            output_str += json.dumps({"classic_prompt" : interactive_loop.classic})+"\n"
                         else:
-                            print(f"{'on' if interactive_loop.classic else 'off'}")
+                            output_str += f"{'on' if y.classic else 'off'}\n"
                     case "json_msgs":
                         if json_output :
-                            print(json.dumps({"json_msgs" : handle_message.json_output}))
+                            output_str += json.dumps({"json_msgs" : handle_message.json_output})+"\n"
                         else:
-                            print(f"{'on' if handle_message.json_output else 'off'}")
+                            output_str += f"{'on' if handle_message.json_output else 'off'}\n"
                     case "color":
                         if json_output :
-                            print(json.dumps({"color" : process_event_message.color}))
+                            output_str += json.dumps({"color" : process_event_message.color})+"\n"
                         else:
-                            print(f"{'on' if process_event_message.color else 'off'}")
+                            output_str += f"{'on' if process_event_message.color else 'off'}\n"
                     case "print_timestamp":
                         if json_output :
-                            print(json.dumps({"timestamp" : process_event_message.timestamp}))
+                            output_str += json.dumps({"timestamp" : process_event_message.timestamp})+"\n"
                         else:
-                            print(f"{process_event_message.timestamp}")
+                            output_str += f"{process_event_message.timestamp}\n"
                     case "json_log_rx":
                         if json_output :
-                            print(json.dumps({"json_log_rx" : handle_log_rx.json_log_rx}))
+                            output_str += json.dumps({"json_log_rx" : handle_log_rx.json_log_rx})+"\n"
                         else:
-                            print(f"{'on' if handle_log_rx.json_log_rx else 'off'}")
+                            output_str += f"{'on' if handle_log_rx.json_log_rx else 'off'}\n"
                     case "channel_echoes":
                         if json_output :
-                            print(json.dumps({"channel_echoes" : handle_log_rx.channel_echoes}))
+                            output_str += json.dumps({"channel_echoes" : handle_log_rx.channel_echoes})+"\n"
                         else:
-                            print(f"{'on' if handle_log_rx.channel_echoes else 'off'}")
+                            output_str += f"{'on' if handle_log_rx.channel_echoes else 'off'}\n"
                     case "advert_echoes":
                         if json_output :
-                            print(json.dumps({"advert_echoes" : handle_log_rx.channel_echoes}))
+                            output_str += json.dumps({"advert_echoes" : handle_log_rx.channel_echoes})+"\n"
                         else:
-                            print(f"{'on' if handle_log_rx.advert_echoes else 'off'}")
+                            output_str += f"{'on' if handle_log_rx.advert_echoes else 'off'}\n"
                     case "echo_unk_chans":
                         if json_output :
-                            print(json.dumps({"echo_unk_chans" : handle_log_rx.echo_unk_chans}))
+                            output_str += json.dumps({"echo_unk_chans" : handle_log_rx.echo_unk_chans})+"\n"
                         else:
-                            print(f"{'on' if handle_log_rx.echo_unk_chans else 'off'}")
+                            output_str += f"{'on' if handle_log_rx.echo_unk_chans else 'off'}\n"
                     case "print_adverts":
                         if json_output :
-                            print(json.dumps({"print_adverts" : handle_advert.print_adverts}))
+                            output_str += json.dumps({"print_adverts" : handle_advert.print_adverts})+"\n"
                         else:
-                            print(f"{'on' if handle_advert.print_adverts else 'off'}")
+                            output_str += f"{'on' if handle_advert.print_adverts else 'off'}\n"
                     case "print_path_updates":
                         if json_output :
-                            print(json.dumps({"print_path_updates" : handle_path_update.print_path_updates}))
+                            output_str += json.dumps({"print_path_updates" : handle_path_update.print_path_updates})+"\n"
                         else:
-                            print(f"{'on' if handle_path_update.print_path_updates else 'off'}")
+                            output_str += f"{'on' if handle_path_update.print_path_updates else 'off'}\n"
                     case "print_new_contacts":
                         if json_output :
-                            print(json.dumps({"print_new_contacts" : handle_new_contact.print_new_contacts}))
+                            output_str += json.dumps({"print_new_contacts" : handle_new_contact.print_new_contacts})+"\n"
                         else:
-                            print(f"{'on' if handle_new_contact.print_new_contacts else 'off'}")
+                            output_str += f"{'on' if handle_new_contact.print_new_contacts else 'off'}\n"
                     case "print_snr":
                         if json_output :
-                            print(json.dumps({"print_snr" : process_event_message.print_snr}))
+                            output_str += json.dumps({"print_snr" : process_event_message.print_snr})+"\n"
                         else:
-                            print(f"{'on' if process_event_message.print_snr else 'off'}")
+                            output_str += f"{'on' if process_event_message.print_snr else 'off'}\n"
                     case "name":
                         await mc.commands.send_appstart()
                         if json_output :
-                            print(json.dumps(mc.self_info["name"]))
+                            output_str += json.dumps(mc.self_info["name"])+"\n"
                         else:
-                            print(mc.self_info["name"])
+                            output_str += mc.self_info["name"] + "\n"
                     case "tx":
                         await mc.commands.send_appstart()
                         if json_output :
-                            print(json.dumps(mc.self_info["tx_power"]))
+                            output_str += json.dumps(mc.self_info["tx_power"])+"\n"
                         else:
-                            print(mc.self_info["tx_power"])
+                            output_str += str(mc.self_info["tx_power"]) + "\n"
                     case "coords":
                         await mc.commands.send_appstart()
                         if json_output :
-                            print(json.dumps({"lat": mc.self_info["adv_lat"], "lon":mc.self_info["adv_lon"]}))
+                            output_str += json.dumps({"lat": mc.self_info["adv_lat"], "lon":mc.self_info["adv_lon"]})+"\n"
                         else:
-                            print(f"{mc.self_info['adv_lat']},{mc.self_info['adv_lon']}")
+                            output_str += f"{mc.self_info['adv_lat']},{mc.self_info['adv_lon']}\n"
                     case "lat":
                         await mc.commands.send_appstart()
                         if json_output :
-                            print(json.dumps({"lat": mc.self_info["adv_lat"]}))
+                            output_str += json.dumps({"lat": mc.self_info["adv_lat"]})+"\n"
                         else:
-                            print(f"{mc.self_info['adv_lat']}")
+                            output_str += f"{mc.self_info['adv_lat']}\n"
                     case "lon":
                         await mc.commands.send_appstart()
                         if json_output :
-                            print(json.dumps({"lon": mc.self_info["adv_lon"]}))
+                            output_str += json.dumps({"lon": mc.self_info["adv_lon"]})+"\n"
                         else:
-                            print(f"{mc.self_info['adv_lon']}")
+                            output_str += f"{mc.self_info['adv_lon']}\n"
                     case "radio":
                         await mc.commands.send_appstart()
                         radio = {"radio_freq": mc.self_info["radio_freq"],
@@ -2335,143 +2489,143 @@ async def next_cmd(mc, cmds, json_output=False):
                                 radio["repeat"] = res.payload["repeat"]
 
                         if json_output :
-                            print(json.dumps(radio))
+                            output_str += json.dumps(radio)+"\n"
                         else:
-                            print(f"{radio['radio_freq']},{radio['radio_bw']},{radio['radio_sf']},{radio['radio_cr']}",end="")
+                            output_str += f"{radio['radio_freq']},{radio['radio_bw']},{radio['radio_sf']},{radio['radio_cr']}"
                             if "repeat" in radio:
-                                print(f",{'on' if radio['repeat'] else 'off'}")
+                                output_str += f",{'on' if radio['repeat'] else 'off'}\n"
                             else:
-                                print("")
+                                output_str += "\n"
                     case "repeat":
                         res = await mc.commands.send_device_query()
                         logger.debug(res)
                         if res.type == EventType.ERROR :
-                            print(f"ERROR: {res}")
+                            output_str += f"ERROR: {res}\n"
                         elif json_output :
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                         else :
                             if "repeat" in res.payload :
-                                print(f"Repeat: {'on' if res.payload['repeat'] else 'off'}")
+                                output_str += f"Repeat: {'on' if res.payload['repeat'] else 'off'}\n"
                             else:
-                                print("Can't repeat")
-                    case "path_hash_mode":
+                                output_str += "Can't repeat\n"
+                    case "path_hash_mode"|"path.hash.mode":
                         res = await mc.commands.send_device_query()
                         logger.debug(res)
                         if res.type == EventType.ERROR :
-                            print(f"ERROR: {res}")
+                            output_str += f"ERROR: {res}\n"
                         elif json_output :
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                         else :
                             if "path_hash_mode" in res.payload :
-                                print(f"{res.payload['path_hash_mode']}")
+                                output_str += f"{res.payload['path_hash_mode']}\n"
                             else:
-                                print("Not available")
+                                output_str += "Not available\n"
                     case "bat" :
                         res = await mc.commands.get_bat()
                         logger.debug(res)
                         if res.type == EventType.ERROR:
-                            print(f"Error getting bat {res}")
+                            output_str += f"Error getting bat {res}\n"
                         elif json_output :
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                         else:
-                            print(f"Battery level : {res.payload['level']}")
+                            output_str += f"Battery level : {res.payload['level']}\n"
                     case "private_key":
                         res = await mc.commands.export_private_key()
                         logger.debug(res)
                         if res.type == EventType.ERROR:
-                            print(f"Error exporting private key {res}")
+                            output_str += f"Error exporting private key {res}\n"
                         elif json_output :
                             res.payload["private_key"] = res.payload["private_key"].hex()
-                            print(json.dumps(res.payload))
+                            output_str += json.dumps(res.payload)+"\n"
                         else:
-                            print(f"Private key: {res.payload['private_key'].hex()}")
+                            output_str += f"Private key: {res.payload['private_key'].hex()}\n"
                     case "fstats" :
                         res = await mc.commands.get_bat()
                         logger.debug(res)
                         if res.type == EventType.ERROR or not "used_kb" in res.payload:
-                            print(f"Error getting fs stats {res}")
+                            output_str += f"Error getting fs stats {res}\n"
                         elif json_output :
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                         else:
-                            print(f"Using {res.payload['used_kb']}kB of {res.payload['total_kb']}kB")
+                            output_str += f"Using {res.payload['used_kb']}kB of {res.payload['total_kb']}kB\n"
                     case "multi_acks" :
                         await mc.commands.send_appstart()
                         if json_output :
-                            print(json.dumps({"multi_acks" : mc.self_info["multi_acks"]}))
+                            output_str += json.dumps({"multi_acks" : mc.self_info["multi_acks"]})+"\n"
                         else :
-                            print(f"multi_acks: {mc.self_info['multi_acks']}")
+                            output_str += f"multi_acks: {mc.self_info['multi_acks']}\n"
                     case "manual_add_contacts" :
                         await mc.commands.send_appstart()
                         if json_output :
-                            print(json.dumps({"manual_add_contacts" : mc.self_info["manual_add_contacts"]}))
+                            output_str += json.dumps({"manual_add_contacts" : mc.self_info["manual_add_contacts"]})+"\n"
                         else :
-                            print(f"manual_add_contacts: {mc.self_info['manual_add_contacts']}")
+                            output_str += f"manual_add_contacts: {mc.self_info['manual_add_contacts']}\n"
                     case "autoadd_config" :
                         res = await mc.commands.get_autoadd_config()
                         if res is None or res.type == EventType.ERROR:
                             logger.error("Can't get autoadd_config")
                         else :
-                            print(f"0x{res.payload['config']:02x}")
+                            output_str += f"0x{res.payload['config']:02x}\n"
                     case "telemetry_mode_base" :
                         await mc.commands.send_appstart()
                         if json_output :
-                            print(json.dumps({"telemetry_mode_base" : mc.self_info["telemetry_mode_base"]}))
+                            output_str += json.dumps({"telemetry_mode_base" : mc.self_info["telemetry_mode_base"]})+"\n"
                         else :
-                            print(f"telemetry_mode_base: {mc.self_info['telemetry_mode_base']}")
+                            output_str += f"telemetry_mode_base: {mc.self_info['telemetry_mode_base']}\n"
                     case "telemetry_mode_loc" :
                         await mc.commands.send_appstart()
                         if json_output :
-                            print(json.dumps({"telemetry_mode_loc" : mc.self_info["telemetry_mode_loc"]}))
+                            output_str += json.dumps({"telemetry_mode_loc" : mc.self_info["telemetry_mode_loc"]})+"\n"
                         else :
-                            print(f"telemetry_mode_loc: {mc.self_info['telemetry_mode_loc']}")
+                            output_str += f"telemetry_mode_loc: {mc.self_info['telemetry_mode_loc']}\n"
                     case "telemetry_mode_env" :
                         await mc.commands.send_appstart()
                         if json_output :
-                            print(json.dumps({"telemetry_mode_env" : mc.self_info["telemetry_mode_env"]}))
+                            output_str += json.dumps({"telemetry_mode_env" : mc.self_info["telemetry_mode_env"]})+"\n"
                         else :
-                            print(f"telemetry_mode_env: {mc.self_info['telemetry_mode_env']}")
+                            output_str += f"telemetry_mode_env: {mc.self_info['telemetry_mode_env']}\n"
                     case "advert_loc_policy" :
                         await mc.commands.send_appstart()
                         if json_output :
-                            print(json.dumps({"advert_loc_policy" : mc.self_info["adv_loc_policy"]}))
+                            output_str += json.dumps({"advert_loc_policy" : mc.self_info["adv_loc_policy"]})+"\n"
                         else :
-                            print(f"advert_loc_policy: {mc.self_info['adv_loc_policy']}")
+                            output_str += f"advert_loc_policy: {mc.self_info['adv_loc_policy']}\n"
                     case "auto_update_contacts" :
                         if json_output :
-                            print(json.dumps({"auto_update_contacts" : mc.auto_update_contacts}))
+                            output_str += json.dumps({"auto_update_contacts" : mc.auto_update_contacts})+"\n"
                         else :
-                            print(f"auto_update_contacts: {'on' if mc.auto_update_contacts else 'off'}")
+                            output_str += f"auto_update_contacts: {'on' if mc.auto_update_contacts else 'off'}\n"
                     case "custom" :
                         res = await mc.commands.get_custom_vars()
                         logger.debug(res)
                         if res.type == EventType.ERROR :
                             if json_output :
-                                print(json.dumps(res))
+                                output_str += json.dumps(res)+"\n"
                             else :
                                 logger.error("Couldn't get custom variables")
                         else :
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                     case "stats_core":
                         res = await mc.commands.get_stats_core()
                         logger.debug(res)
                         if res.type == EventType.ERROR:
                             logger.error("Couldn't get stats")
                         else:
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                     case "stats_radio":
                         res = await mc.commands.get_stats_radio()
                         logger.debug(res)
                         if res.type == EventType.ERROR:
                             logger.error("Couldn't get stats")
                         else:
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                     case "stats_packets":
                         res = await mc.commands.get_stats_packets()
                         logger.debug(res)
                         if res.type == EventType.ERROR:
                             logger.error("Couldn't get stats")
                         else:
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                     case "stats"|"status":
                         stats = {}
                         res = await mc.commands.get_stats_core()
@@ -2490,19 +2644,19 @@ async def next_cmd(mc, cmds, json_output=False):
                             logger.error("Couldn't get packets stats")
                         else:
                             stats.update(res.payload)
-                        print(json.dumps(stats, indent=4))
+                        output_str += json.dumps(stats, indent=4)+"\n"
                     case "allowed_repeat_freq" :
                         res = await mc.commands.get_allowed_repeat_freq()
-                        print(json.dumps(res.payload))
+                        output_str += json.dumps(res.payload)+"\n"
                     case "default_scope" :
                         res = await mc.commands.get_default_flood_scope()
-                        print(json.dumps(res.payload))
+                        output_str += json.dumps(res.payload)+"\n"
                     case _ :
                         res = await mc.commands.get_custom_vars()
                         logger.debug(res)
                         if res.type == EventType.ERROR :
                             if json_output :
-                                print(json.dumps(res))
+                                output_str += json.dumps(res)+"\n"
                             else :
                                 logger.error(f"Couldn't get custom variables")
                         else :
@@ -2514,44 +2668,44 @@ async def next_cmd(mc, cmds, json_output=False):
                                 val = res.payload[vname]
                             except KeyError:
                                 if json_output :
-                                    print(json.dumps({"error" : "Unknown var", "var" : cmds[1]}))
+                                    output_str += json.dumps({"error" : "Unknown var", "var" : cmds[1]})+"\n"
                                 else :
-                                    print(f"Unknown var {cmds[1]}")
+                                    output_str += f"Unknown var {cmds[1]}\n"
                             else:
                                 if json_output :
-                                    print(json.dumps({"var" : vname, "value" : val}))
+                                    output_str += json.dumps({"var" : vname, "value" : val})+"\n"
                                 else:
-                                    print(val)
+                                    output_str += val + "\n"
 
             case "self_telemetry" | "t":
                 res = await mc.commands.get_self_telemetry()
                 logger.debug(res)
                 if res.type == EventType.ERROR:
-                    print(f"Error while requesting telemetry")
+                    output_str += f"Error while requesting telemetry\n"
                 elif res is None:
                     if json_output :
-                        print(json.dumps({"error" : "Timeout waiting telemetry"}))
+                        output_str += json.dumps({"error" : "Timeout waiting telemetry"})+"\n"
                     else:
-                        print("Timeout waiting telemetry")
+                        output_str += "Timeout waiting telemetry\n"
                 else :
-                    print(json.dumps(res.payload, indent=4))
+                    output_str += json.dumps(res.payload, indent=4)+"\n"
 
             case "get_channel":
                 argnum = 1
                 res = await get_channel(mc, cmds[1])
                 if res is None:
-                    print(f"Error while requesting channel info")
+                    output_str += f"Error while requesting channel info\n"
                 else:
-                    print(res)
+                    output_str += str(res) + "\n"
 
             case "get_channels"|"gc":
                 res = await get_channels(mc)
                 if json_output:
-                    print(json.dumps(res))
+                    output_str += json.dumps(res)+"\n"
                 else:
                     for c in mc.channels:
                         if c["channel_name"] != "":
-                            print(f"{c['channel_idx']}: {c['channel_name']} [{c['channel_secret']}]")
+                            output_str += f"{c['channel_idx']}: {c['channel_name']} [{c['channel_secret']}]\n"
 
             case "set_channel":
                 argnum = 3
@@ -2563,7 +2717,7 @@ async def next_cmd(mc, cmds, json_output=False):
                 else:
                     res = await set_channel(mc, cmds[1], cmds[2], bytes.fromhex(cmds[3]))
                 if res is None:
-                    print("Error setting channel")
+                    output_str += "Error setting channel\n"
 
             case "add_channel":
                 argnum = 2
@@ -2575,25 +2729,25 @@ async def next_cmd(mc, cmds, json_output=False):
                 else:
                     res = await set_channel(mc, "", cmds[1], bytes.fromhex(cmds[2]))
                 if res is None:
-                    print("Error adding channel")
+                    output_str += "Error adding channel\n"
 
             case "remove_channel":
                 argnum = 1
                 res = await set_channel(mc, cmds[1], "", bytes.fromhex(16*"00"))
                 if res is None:
-                    print("Error deleting channel")
+                    output_str += "Error deleting channel\n"
 
             case "scope":
                 argnum = 1
                 res = await set_scope(mc, cmds[1])
                 if res is None:
-                    print(f"Error while setting scope")
+                    output_str += f"Error while setting scope\n"
 
             case "reboot" :
                 res = await mc.commands.reboot()
                 logger.debug(res)
                 if json_output :
-                    print(json.dumps(res.payload, indent=4))
+                    output_str += json.dumps(res.payload, indent=4)+"\n"
 
             case "msg" | "m" | "{" : # sends to a contact from name
                 argnum = 2
@@ -2610,17 +2764,17 @@ async def next_cmd(mc, cmds, json_output=False):
 
                 if dest is None:
                     if json_output :
-                        print(json.dumps({"error" : "unknown destination", "dest" : cmds[1]}))
+                        output_str += json.dumps({"error" : "unknown destination", "dest" : cmds[1]})+"\n"
                     else:
-                        print(f"Unknown destination {cmds[1]}")
+                        output_str += f"Unknown destination {cmds[1]}\n"
 
                 else :
                     res = await send_msg(mc, dest, cmds[2])
                     logger.debug(res)
                     if res.type == EventType.ERROR:
-                        print(f"Error sending message: {res}")
+                        output_str += f"Error sending message: {res}\n"
                     elif json_output :
-                        print(json.dumps(res.payload, indent=4))
+                        output_str += json.dumps(res.payload, indent=4)+"\n"
 
             case "chan"|"ch" :
                 argnum = 2
@@ -2628,23 +2782,28 @@ async def next_cmd(mc, cmds, json_output=False):
                     nb = int(cmds[1])
                 else:
                     chan = await get_channel_by_name(mc, cmds[1])
-                    print (chan)
-                    nb = chan['channel_idx']
-                res = await send_chan_msg(mc, nb, cmds[2])
-                logger.debug(res)
-                if res.type == EventType.ERROR:
-                    print(f"Error sending message: {res}")
-                elif json_output :
-                    print(json.dumps(res.payload, indent=4))
+                    if chan is None:
+                        nb = None
+                    else:
+                        nb = chan['channel_idx']
+                if nb is None:
+                    logger.error("Invalid channel")
+                else:
+                    res = await send_chan_msg(mc, nb, cmds[2])
+                    logger.debug(res)
+                    if res.type == EventType.ERROR:
+                        output_str += f"Error sending message: {res}\n"
+                    elif json_output :
+                        output_str += json.dumps(res.payload, indent=4)+"\n"
 
             case "public" | "dch" : # default chan
                 argnum = 1
                 res = await send_chan_msg(mc, 0, cmds[1])
                 logger.debug(res)
                 if res.type == EventType.ERROR:
-                    print(f"Error sending message: {res}")
+                    output_str += f"Error sending message: {res}\n"
                 elif json_output :
-                    print(json.dumps(res.payload, indent=4))
+                    output_str += json.dumps(res.payload, indent=4)+"\n"
 
             case "cmd" | "c" | "[" :
                 argnum = 2
@@ -2661,18 +2820,17 @@ async def next_cmd(mc, cmds, json_output=False):
 
                 if dest is None:
                     if json_output :
-                        print(json.dumps({"error" : "contact destination", "dest" : cmds[1]}))
+                        output_str += json.dumps({"error" : "contact destination", "dest" : cmds[1]})+"\n"
                     else:
-                        print(f"Unknown destination {cmds[1]}")
+                        output_str += f"Unknown destination {cmds[1]}\n"
 
                 else:
                     res = await send_cmd(mc, dest, cmds[2])
                     logger.debug(res)
                     if res.type == EventType.ERROR:
-                        print(f"Error sending cmd: {res}")
+                        output_str += f"Error sending cmd: {res}\n"
                     elif json_output :
-                        print(res.payload)
-                        print(json.dumps(res.payload, indent=4))
+                        output_str += json.dumps(res.payload, indent=4)+"\n"
 
             case "trace" | "tr":
                 argnum = 1
@@ -2693,45 +2851,44 @@ async def next_cmd(mc, cmds, json_output=False):
                         timeout=timeout)
                     if ev is None:
                         if json_output:
-                            print(json.dumps({"error" : "timeout waiting trace"}))
+                            output_str += json.dumps({"error" : "timeout waiting trace"})+end
                         else :
-                            print(f"Timeout waiting trace for path {cmds[1]}")
+                            output_str += f"Timeout waiting trace for path {cmds[1]}" + end
                     elif ev.type == EventType.ERROR:
                         if json_output:
-                            print(json.dumps(ev.payload))
+                            output_str += json.dumps(ev.payload) + end
                         else :
-                            print("Error waiting trace")
+                            output_str += "Error waiting trace" + end
                     else:
                         if json_output:
-                            print(json.dumps(ev.payload, indent=2))
+                            output_str += json.dumps(ev.payload, indent=2) + end
                         else :
                             color = process_event_message.color
                             classic = interactive_loop.classic or not color
-                            print(" ", end="")
+                            output_str += " "
                             for t in ev.payload["path"]:
                                 if classic :
-                                    print("→",end="")
+                                    output_str += "→"
                                 else:
-                                    print(f"{ANSI_INVERT}", end="")
+                                    output_str += f"{ANSI_INVERT}"
                                 snr = t['snr']
                                 if color:
                                     if snr >= 10 :
-                                        print(ANSI_BGREEN, end="")
+                                        output_str += ANSI_BGREEN
                                     elif snr <= 0:
-                                        print(ANSI_BRED, end="")
+                                        output_str += ANSI_BRED
                                     else :
-                                        print(ANSI_BGRAY, end="")
-                                print(f"{snr:.2f}",end="")
+                                        output_str += ANSI_BGRAY
+                                output_str += f"{snr:.2f}"
                                 if classic :
-                                    print("→",end="")
+                                    output_str += "→"
                                 else :
-                                    print(f"{ANSI_NORMAL}{ARROW_HEAD}",end="")
+                                    output_str += f"{ANSI_NORMAL}{ARROW_HEAD}"
                                 if color:
-                                    print(ANSI_END, end="")
+                                    output_str += ANSI_END
                                 if "hash" in t:
-                                    print(f"[{t['hash']}]",end="")
-                                else:
-                                    print()
+                                    output_str += f"[{t['hash']}]"
+                            output_str += end
 
             case "login" | "l" :
                 argnum = 2
@@ -2739,57 +2896,57 @@ async def next_cmd(mc, cmds, json_output=False):
 
                 if contact is None: # still none ? contact not found
                     if json_output :
-                        print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
+                        output_str += json.dumps({"error" : "contact unknown", "name" : cmds[1]})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     password = cmds[2]
                     if password == "$":
                         sess = PromptSession("Password: ", is_password=True)
                         password = await sess.prompt_async()
 
-                    timeout = 0 if not "timeout" in contact else contact["timeout"] 
+                    timeout = 0 if not "timeout" in contact else contact["timeout"]
                     res = await mc.commands.send_login_sync(contact, password, timeout = timeout)
                     logger.debug(res)
                     if res is None:
-                        print("Login failed : Error or Timeout waiting response")
+                        output_str += "Login failed : Error or Timeout waiting response\n"
                     elif json_output :
                         if res.type == EventType.LOGIN_SUCCESS:
-                            print(json.dumps({"login_success" : True}, indent=4))
+                            output_str += json.dumps({"login_success" : True}, indent=4)+"\n"
                         else:
-                            print(json.dumps({"login_success" : False, "error" : "login failed"}, indent=4))
+                            output_str += json.dumps({"login_success" : False, "error" : "login failed"}, indent=4)+"\n"
                     else:
                         if res.type == EventType.LOGIN_SUCCESS:
-                            print("Login success")
+                            output_str += "Login success\n"
                         else:
-                            print("Login failed")
+                            output_str += "Login failed\n"
 
             case "logout" :
                 argnum = 1
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "unknown contact"}))
+                        output_str += json.dumps({"error" : "unknown contact"})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     res = await mc.commands.send_logout(contact)
                     logger.debug(res)
                     if res.type == EventType.ERROR:
-                        print(f"Error while logout: {res}")
+                        output_str += f"Error while logout: {res}\n"
                     elif json_output :
-                        print(json.dumps(res.payload))
+                        output_str += json.dumps(res.payload)+"\n"
                     else:
-                        print("Logout ok")
+                        output_str += "Logout ok\n"
 
             case "contact_timeout" :
                 argnum = 2
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "unknown contact"}))
+                        output_str += json.dumps({"error" : "unknown contact"})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     contact["timeout"] = float(cmds[2])
 
@@ -2798,25 +2955,25 @@ async def next_cmd(mc, cmds, json_output=False):
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "unknown contact"}))
+                        output_str += json.dumps({"error" : "unknown contact"})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     res = await discover_path(mc, contact)
                     if res is None:
-                        print(f"Error while discovering path")
+                        output_str += f"Error while discovering path\n"
                     else:
                         if json_output :
-                            print(json.dumps(res, indent=4))
+                            output_str += json.dumps(res, indent=4)+"\n"
                         else:
                             if "error" in res :
-                                print("Timeout while discovering path")
+                                output_str += "Timeout while discovering path\n"
                             else:
                                 outp = res['out_path']
                                 outp = outp if outp != "" else "direct"
                                 inp = res['in_path']
                                 inp = inp if inp != "" else "direct"
-                                print(f"Path for {contact['adv_name']}: out {outp}, in {inp}")
+                                output_str += f"Path for {contact['adv_name']}: out {outp}, in {inp}\n"
 
             case "node_discover"|"nd" :
                 argnum = 1
@@ -2847,7 +3004,7 @@ async def next_cmd(mc, cmds, json_output=False):
 
                 res = await mc.commands.send_node_discover_req(types, prefix_only=prefix_only)
                 if res is None or res.type == EventType.ERROR:
-                    print("Error sending discover request")
+                    output_str += "Error sending discover request\n"
                 else:
                     exp_tag = res.payload["tag"].to_bytes(4, "little").hex()
                     dn = []
@@ -2863,10 +3020,10 @@ async def next_cmd(mc, cmds, json_output=False):
                             dn.append(r.payload)
 
                     if json_output:
-                        print(json.dumps(dn))
+                        output_str += json.dumps(dn)+"\n"
                     else:
                         await mc.ensure_contacts()
-                        print(f"Discovered {len(dn)} nodes:")
+                        output_str += f"Discovered {len(dn)} nodes:\n"
                         for n in dn:
                             try :
                                 name = f"{n['pubkey'][0:6]} {mc.get_contact_by_key_prefix(n['pubkey'])['adv_name']}"
@@ -2877,7 +3034,7 @@ async def next_cmd(mc, cmds, json_output=False):
                             else:
                                 type = CONTACT_TYPENAMES[n['node_type']]
 
-                            print(f" {name:28} {type:>4} SNR: {n['SNR_in']:6,.2f}->{n['SNR']:6,.2f} RSSI: ->{n['RSSI']:4}")
+                            output_str += f" {name:28} {type:>4} SNR: {n['SNR_in']:6,.2f}->{n['SNR']:6,.2f} RSSI: ->{n['RSSI']:4}\n"
 
             case "req_regions"|"rr":
                 argnum = 1
@@ -2885,22 +3042,22 @@ async def next_cmd(mc, cmds, json_output=False):
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "unknown contact"}))
+                        output_str += json.dumps({"error" : "unknown contact"})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     timeout = 0 if not "timeout" in contact else contact["timeout"]
                     res = await mc.commands.req_regions_sync(contact, timeout)
                     if res is None :
                         if json_output :
-                            print(json.dumps({"error" : "Getting data"}))
+                            output_str += json.dumps({"error" : "Getting data"})+"\n"
                         else:
-                            print("Error getting data")
+                            output_str += "Error getting data\n"
                     else :
                         if json_output :
-                            print(json.dumps({"repeater": contact["adv_name"]}, {"regions": res}))
+                            output_str += json.dumps({"repeater": contact["adv_name"]}, {"regions": res})+"\n"
                         else :
-                            print(f"{contact['adv_name']} repeats {res}")
+                            output_str += f"{contact['adv_name']} repeats {res}\n"
 
             case "req_owner"|"ro":
                 argnum = 1
@@ -2908,25 +3065,25 @@ async def next_cmd(mc, cmds, json_output=False):
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "unknown contact"}))
+                        output_str += json.dumps({"error" : "unknown contact"})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     timeout = 0 if not "timeout" in contact else contact["timeout"]
                     res = await mc.commands.req_owner_sync(contact, timeout)
                     if res is None :
                         if json_output :
-                            print(json.dumps({"error" : "Getting data"}))
+                            output_str += json.dumps({"error" : "Getting data"})+"\n"
                         else:
-                            print("Error getting data")
+                            output_str += "Error getting data\n"
                     else :
                         if json_output:
-                            print(json.dumps(res))
+                            output_str += json.dumps(res)+"\n"
                         else:
                             if res["owner"] == "":
-                                print(f"{res['name']} has no owner set")
+                                output_str += f"{res['name']} has no owner set\n"
                             else:
-                                print(f"{res['name']} is owned by {res['owner']}")
+                                output_str += f"{res['name']} is owned by {res['owner']}\n"
 
             case "req_clock":
                 argnum = 1
@@ -2934,19 +3091,19 @@ async def next_cmd(mc, cmds, json_output=False):
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "unknown contact"}))
+                        output_str += json.dumps({"error" : "unknown contact"})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     timeout = 0 if not "timeout" in contact else contact["timeout"]
                     res = await mc.commands.req_basic_sync(contact, timeout)
                     if res is None :
                         if json_output :
-                            print(json.dumps({"error" : "Getting data"}))
+                            output_str += json.dumps({"error" : "Getting data"})+"\n"
                         else:
-                            print("Error getting data")
+                            output_str += "Error getting data\n"
                     else :
-                        print(int.from_bytes(bytes.fromhex(res["data"][0:8]), byteorder="little", signed=False))
+                        output_str += str(int.from_bytes(bytes.fromhex(res["data"][0:8]), byteorder="little", signed=False)) + "\n"
 
             case "req_telemetry"|"rt" :
                 argnum = 1
@@ -2954,42 +3111,42 @@ async def next_cmd(mc, cmds, json_output=False):
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "unknown contact"}))
+                        output_str += json.dumps({"error" : "unknown contact"})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     timeout = 0 if not "timeout" in contact else contact["timeout"]
                     res = await mc.commands.req_telemetry_sync(contact, timeout)
                     if res is None :
                         if json_output :
-                            print(json.dumps({"error" : "Getting data"}))
+                            output_str += json.dumps({"error" : "Getting data"})+"\n"
                         else:
-                            print("Error getting data")
+                            output_str += "Error getting data\n"
                     else :
-                        print(json.dumps({
+                        output_str += json.dumps({
                             "name": contact["adv_name"],
                             "pubkey_pre": contact["public_key"][0:16],
                             "lpp": res,
-                        }, indent = 4))
+                        }, indent = 4) + "\n"
 
             case "req_status"|"rs" :
                 argnum = 1
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "unknown contact"}))
+                        output_str += json.dumps({"error" : "unknown contact"})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     timeout = 0 if not "timeout" in contact else contact["timeout"]
                     res = await mc.commands.req_status_sync(contact, timeout)
                     if res is None :
                         if json_output :
-                            print(json.dumps({"error" : "Getting data"}))
+                            output_str += json.dumps({"error" : "Getting data"})+"\n"
                         else:
-                            print("Error getting data")
+                            output_str += "Error getting data\n"
                     else :
-                        print(json.dumps(res, indent=4))
+                        output_str += json.dumps(res, indent=4)+"\n"
 
             case "req_mma" | "rm":
                 argnum = 3
@@ -2997,9 +3154,9 @@ async def next_cmd(mc, cmds, json_output=False):
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "unknown contact"}))
+                        output_str += json.dumps({"error" : "unknown contact"})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     if cmds[2][-1] == "s":
                         from_secs = int(cmds[2][0:-1])
@@ -3021,31 +3178,31 @@ async def next_cmd(mc, cmds, json_output=False):
                     res = await mc.commands.req_mma_sync(contact, from_secs, to_secs, timeout)
                     if res is None :
                         if json_output :
-                            print(json.dumps({"error" : "Getting data"}))
+                            output_str += json.dumps({"error" : "Getting data"})+"\n"
                         else:
-                            print("Error getting data")
+                            output_str += "Error getting data\n"
                     else :
-                        print(json.dumps(res, indent=4))
+                        output_str += json.dumps(res, indent=4)+"\n"
 
             case "req_acl"|"ra" :
                 argnum = 1
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "unknown contact"}))
+                        output_str += json.dumps({"error" : "unknown contact"})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     timeout = 0 if not "timeout" in contact else contact["timeout"]
                     res = await mc.commands.req_acl_sync(contact, timeout)
                     if res is None :
                         if json_output :
-                            print(json.dumps({"error" : "Getting data"}))
+                            output_str += json.dumps({"error" : "Getting data"})+"\n"
                         else:
-                            print("Error getting data")
+                            output_str += "Error getting data\n"
                     else :
                         if json_output:
-                            print(json.dumps(res, indent=4))
+                            output_str += json.dumps(res, indent=4)+"\n"
                         else:
                             for e in res:
                                 name = f" [{e['key']}] "
@@ -3055,30 +3212,30 @@ async def next_cmd(mc, cmds, json_output=False):
                                         name += f"self"
                                 else:
                                     name += f"{ct['adv_name']}"
-                                print(f"{name}{ANSI_START}42G: {e['perm']:02x}")
+                                output_str += f"{name}{ANSI_START}42G: {e['perm']:02x}\n"
 
             case "req_neighbours"|"rn" :
                 argnum = 1
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "unknown contact"}))
+                        output_str += json.dumps({"error" : "unknown contact"})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     timeout = 0 if not "timeout" in contact else contact["timeout"]
                     res = await mc.commands.fetch_all_neighbours(contact, timeout=timeout)
                     if res is None :
                         if json_output :
-                            print(json.dumps({"error" : "Getting data"}))
+                            output_str += json.dumps({"error" : "Getting data"})+"\n"
                         else:
-                            print("Error getting data")
+                            output_str += "Error getting data\n"
                     else :
                         if json_output:
-                            print(json.dumps(res, indent=4))
+                            output_str += json.dumps(res, indent=4)+"\n"
                         else:
                             width = os.get_terminal_size().columns
-                            print(f"Got {res['results_count']} neighbours out of {res['neighbours_count']} from {contact['adv_name']}:")
+                            output_str += f"Got {res['results_count']} neighbours out of {res['neighbours_count']} from {contact['adv_name']}:\n"
                             for n in res['neighbours']:
                                 ct = mc.get_contact_by_key_prefix(n["pubkey"])
                                 if ct and width > 60 :
@@ -3101,32 +3258,32 @@ async def next_cmd(mc, cmds, json_output=False):
                                 elif t_s / 60 >= 1 : # result in min
                                     time_ago = f"{int(t_s/60)}m ago{f' ({time_ago})' if width > 62 else ''}"
 
-                                print(f" {name} {time_ago}, {n['snr']}dB{' SNR' if width > 66 else ''}")
+                                output_str += f" {name} {time_ago}, {n['snr']}dB{' SNR' if width > 66 else ''}\n"
 
             case "req_binary" :
                 argnum = 2
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "unknown contact"}))
+                        output_str += json.dumps({"error" : "unknown contact"})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     timeout = 0 if not "timeout" in contact else contact["timeout"]
                     res = await mc.commands.req_binary(contact, bytes.fromhex(cmds[2]), timeout)
                     if res is None :
                         if json_output :
-                            print(json.dumps({"error" : "Getting binary data"}))
+                            output_str += json.dumps({"error" : "Getting binary data"})+"\n"
                         else:
-                            print("Error getting binary data")
+                            output_str += "Error getting binary data\n"
                     else :
-                        print(json.dumps(res))
+                        output_str += json.dumps(res)+"\n"
 
             case "contacts" | "list" | "lc":
                 await mc.ensure_contacts(follow=True)
                 res = mc.contacts
                 if json_output :
-                    print(json.dumps(res, indent=4))
+                    output_str += json.dumps(res, indent=4) + "\n"
                 else :
                     for c in res.items():
                         if c[1]['out_path_len'] == -1:
@@ -3141,28 +3298,28 @@ async def next_cmd(mc, cmds, json_output=False):
                             for i in range(1,plen):
                                 path_str = path_str + "," + path_str_in[i*phs*2:(i+1)*2*phs]
                             #path_str = f"{c[1]['out_path']}:{c[1]['out_path_hash_mode']}"
-                        print(f"{c[1]['adv_name']:30} ", end="", flush=True)
-                        print(f"{ANSI_START}34G", end="", flush=True)
-                        print(f"{CONTACT_TYPENAMES[c[1]['type']]:4}  ", end="", flush=True)
-                        print(f"{c[1]['public_key'][:12]}  {path_str}")
-                    print(f"> {len(mc.contacts)} contacts in device")
+                        output_str += f"{c[1]['adv_name']:30} "
+                        output_str += f"{ANSI_START}34G"
+                        output_str += f"{CONTACT_TYPENAMES[c[1]['type']]:4}  "
+                        output_str += f"{c[1]['public_key'][:12]}  {path_str}\n"
+                    output_str += f"> {len(mc.contacts)} contacts in device\n"
 
             case "reload_contacts" | "rc":
                 await mc.commands.get_contacts()
                 res = mc.contacts
                 if json_output :
-                    print(json.dumps(res, indent=4))
+                    output_str += json.dumps(res, indent=4)+"\n"
                 else :
                     for c in res.items():
-                        print(c[1]["adv_name"])
-                    print(f"> {len(mc.contacts)} contacts in device")
+                        output_str += c[1]["adv_name"]
+                    output_str += f"> {len(mc.contacts)} contacts in device\n"
 
             case "pending_contacts":
                 if json_output:
-                    print(json.dumps(mc.pending_contacts, indent=4))
+                    output_str += json.dumps(mc.pending_contacts, indent=4)+"\n"
                 else:
                     for c in mc.pending_contacts.items():
-                        print(f"{c[1]['adv_name']}: {c[1]['public_key']}")
+                        output_str += f"{c[1]['adv_name']}: {c[1]['public_key']}\n"
 
             case "flush_pending":
                 mc.flush_pending_contacts()
@@ -3179,46 +3336,46 @@ async def next_cmd(mc, cmds, json_output=False):
                             break
                 if contact is None:
                     if json_output:
-                        print(json.dumps({"error":"Contact does not exist"}))
+                        output_str += json.dumps({"error":"Contact does not exist"})+"\n"
                     else:
                         logger.error(f"Contact {cmds[1]} does not exist")
                 else:
                     res = await mc.commands.add_contact(contact)
                     logger.debug(res)
                     if res.type == EventType.ERROR:
-                        print(f"Error adding contact: {res}")
+                        output_str += f"Error adding contact: {res}\n"
                     else:
                         mc.contacts[contact["public_key"]]=contact
                         if json_output :
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
 
             case "path":
                 argnum = 1
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
+                        output_str += json.dumps({"error" : "contact unknown", "name" : cmds[1]})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     path = contact["out_path"]
                     path_len = contact["out_path_len"]
                     if json_output :
-                        print(json.dumps({"adv_name" : contact["adv_name"],
-                                          "out_path_hash_len" : contact["out_path_hash_len"],
-                                          "out_path_len" : path_len,
-                                          "out_path" : path}))
+                        output_str += json.dumps({"adv_name" : contact["adv_name"],
+                            "out_path_hash_len" : contact["out_path_hash_len"],
+                            "out_path_len" : path_len,
+                            "out_path" : path}) + "\n"
                     else:
                         if (path_len == 0) :
-                            print("0 hop")
+                            output_str += "0 hop\n"
                         elif (path_len == -1) :
-                            print("Flood")
+                            output_str += "Flood\n"
                         else:
                             phs = contact['out_path_hash_mode']+1
                             path_str = path[:2*phs]
                             for i in range(1,path_len):
                                 path_str = path_str + "," + path[i*phs*2:(i+1)*2*phs]
-                            print(path_str)
+                            output_str += path_str
 
             case "contact_info" | "ci":
                 argnum = 1
@@ -3226,11 +3383,11 @@ async def next_cmd(mc, cmds, json_output=False):
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
+                        output_str += json.dumps({"error" : "contact unknown", "name" : cmds[1]})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
-                    print(json.dumps(contact, indent=4))
+                    output_str += json.dumps(contact, indent=4)+"\n"
 
             case "add_contact" :
                 argnum = 3 # key type name
@@ -3250,20 +3407,20 @@ async def next_cmd(mc, cmds, json_output=False):
                     res = await mc.commands.update_contact(contact)
                     logger.debug(res)
                     if res.type == EventType.ERROR:
-                        print(f"Error adding contact: {res}")
+                        output_str += f"Error adding contact: {res}\n"
                     elif json_output :
-                        print(json.dumps(res.payload, indent=4))
+                        output_str += json.dumps(res.payload, indent=4)+"\n"
                 except ValueError:
-                    print(f"Error ! Command format add_contact key type namez")
+                    output_str += f"Error ! Command format add_contact key type namez\n"
 
             case "change_path" | "cp":
                 argnum = 2
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
+                        output_str += json.dumps({"error" : "contact unknown", "name" : cmds[1]})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     path = cmds[2]
                     if path == "0":
@@ -3276,44 +3433,44 @@ async def next_cmd(mc, cmds, json_output=False):
                         res = await mc.commands.change_contact_path(contact, path)
                         logger.debug(res)
                         if res.type == EventType.ERROR:
-                            print(f"Error setting path: {res}")
+                            output_str += f"Error setting path: {res}\n"
                         elif json_output :
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                     except ValueError:
-                        print(f"Bad path format {cmds[2]}")
+                        output_str += f"Bad path format {cmds[2]}\n"
 
             case "change_flags" | "cf":
                 argnum = 2
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
+                        output_str += json.dumps({"error" : "contact unknown", "name" : cmds[1]})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     res = await mc.commands.change_contact_flags(contact, int(cmds[2]))
                     logger.debug(res)
                     if res.type == EventType.ERROR:
-                        print(f"Error setting path: {res}")
+                        output_str += f"Error setting path: {res}\n"
                     elif json_output :
-                        print(json.dumps(res.payload, indent=4))
+                        output_str += json.dumps(res.payload, indent=4)+"\n"
 
             case "reset_path" | "rp" :
                 argnum = 1
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
+                        output_str += json.dumps({"error" : "contact unknown", "name" : cmds[1]})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     res = await mc.commands.reset_path(contact)
                     logger.debug(res)
                     if res.type == EventType.ERROR:
-                        print(f"Error resetting path: {res}")
+                        output_str += f"Error resetting path: {res}\n"
                     else:
                         if json_output :
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                         contact["out_path"] = ""
                         contact["out_path_len"] = -1
 
@@ -3332,58 +3489,58 @@ async def next_cmd(mc, cmds, json_output=False):
                 if res is None:
                     logger.error("couldn't send cmd")
                 elif res.type == EventType.ERROR:
-                    print(res)
+                    output_str += f"Error getting advert path : {res}\n"
                 else:
                     if json_output:
-                        print(json.dumps(res.payload))
-                    else : 
+                        output_str += json.dumps(res.payload)+"\n"
+                    else :
                         path_len = res.payload['path_len']
                         if (path_len == 0) :
-                            print("0 hop")
+                            output_str += "0 hop\n"
                         elif (path_len == -1) :
-                            print("Flood")
+                            output_str += "Flood\n"
                         else:
                             phs = res.payload['path_hash_mode']+1
                             path = res.payload['path']
                             path_str = path[:2*phs]
                             for i in range(1,path_len):
                                 path_str = path_str + "," + path[i*phs*2:(i+1)*2*phs]
-                            print(path_str)
+                            output_str += path_str + "\n"
 
             case "share_contact" | "sc":
                 argnum = 1
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
+                        output_str += json.dumps({"error" : "contact unknown", "name" : cmds[1]})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     res = await mc.commands.share_contact(contact)
                     logger.debug(res)
                     if res.type == EventType.ERROR:
-                        print(f"Error while sharing contact: {res}")
+                        output_str += f"Error while sharing contact: {res}\n"
                     elif json_output :
-                        print(json.dumps(res.payload, indent=4))
+                        output_str += json.dumps(res.payload, indent=4)+"\n"
 
             case "export_contact"|"ec":
                 argnum = 1
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
+                        output_str += json.dumps({"error" : "contact unknown", "name" : cmds[1]})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     res = await mc.commands.export_contact(contact)
                     logger.debug(res)
                     if res.type == EventType.ERROR:
-                        print(f"Error exporting contact: {res}")
+                        output_str += f"Error exporting contact: {res}\n"
                     else:
                         if json_output :
-                            print(json.dumps(res.payload))
+                            output_str += json.dumps(res.payload)+"\n"
                         else :
-                            print(res.payload['uri'])
+                            output_str += res.payload['uri'] + "\n"
 
             case "import_contact"|"ic":
                 argnum = 1
@@ -3391,7 +3548,7 @@ async def next_cmd(mc, cmds, json_output=False):
                     res = await mc.commands.import_contact(bytes.fromhex(cmds[1][11:]))
                     logger.debug(res)
                     if res.type == EventType.ERROR:
-                        print(f"Error while importing contact: {res}")
+                        output_str += f"Error while importing contact: {res}\n"
                     else:
                         logger.info("Contact successfully added")
                         await mc.commands.get_contacts()
@@ -3401,110 +3558,111 @@ async def next_cmd(mc, cmds, json_output=False):
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
+                        output_str += json.dumps({"error" : "contact unknown", "name" : cmds[1]})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     res = await mc.commands.export_contact(contact)
                     logger.debug(res)
                     if res.type == EventType.ERROR:
-                        print(f"Error exporting contact: {res}")
+                        output_str += f"Error exporting contact: {res}\n"
                     else :
                         resp = requests.post("https://map.meshcore.dev/api/v1/nodes",
                                             json = {"links": [res.payload['uri']]})
                         if json_output :
-                            print(json.dumps({"response", str(resp)}))
+                            output_str += json.dumps({"response": str(resp)})+"\n"
                         else :
-                            print(resp)
+                            output_str += str(resp) + "\n"
 
             case "card" :
                 res = await mc.commands.export_contact()
                 logger.debug(res)
                 if res.type == EventType.ERROR:
-                    print(f"Error exporting contact: {res}")
+                    output_str += f"Error exporting contact: {res}\n"
                 elif json_output :
-                    print(json.dumps(res.payload))
+                    output_str += json.dumps(res.payload)+"\n"
                 else :
-                    print(res.payload['uri'])
+                    output_str += res.payload['uri'] + "\n"
 
             case "upload_card" :
                 res = await mc.commands.export_contact()
                 logger.debug(res)
                 if res.type == EventType.ERROR:
-                    print(f"Error exporting contact: {res}")
+                    output_str += f"Error exporting contact: {res}\n"
                 else :
                     resp = requests.post("https://map.meshcore.dev/api/v1/nodes",
                                          json = {"links": [res.payload['uri']]})
                     if json_output :
-                        print(json.dumps({"response", str(resp)}))
+                        output_str += json.dumps({"response": str(resp)})+"\n"
                     else :
-                        print(resp)
+                        output_str += str(resp) + "\n"
 
             case "remove_contact" :
                 argnum = 1
                 contact = await get_contact_from_arg(mc, cmds[1])
                 if contact is None:
                     if json_output :
-                        print(json.dumps({"error" : "contact unknown", "name" : cmds[1]}))
+                        output_str += json.dumps({"error" : "contact unknown", "name" : cmds[1]})+"\n"
                     else:
-                        print(f"Unknown contact {cmds[1]}")
+                        output_str += f"Unknown contact {cmds[1]}\n"
                 else:
                     res = await mc.commands.remove_contact(contact)
                     logger.debug(res)
                     if res.type == EventType.ERROR:
-                        print(f"Error removing contact: {res}")
+                        output_str += f"Error removing contact: {res}\n"
                     else:
                         if json_output :
-                            print(json.dumps(res.payload, indent=4))
+                            output_str += json.dumps(res.payload, indent=4)+"\n"
                         del mc.contacts[contact["public_key"]]
 
             case "recv" | "r" :
                 res = await mc.commands.get_msg()
                 logger.debug(res)
-                await process_event_message(mc, res, json_output)
+                output_str += await process_event_message(mc, res, json_output)
 
             case "sync_msgs" | "sm":
-                ret = True
+                ret = "first run"
                 first = True
                 if json_output :
-                    print("[", end="", flush=True)
+                    output_str += "["
                     end=""
                 else:
                     end="\n"
-                while ret:
+                while ret != "":
                     res = await mc.commands.get_msg()
                     logger.debug(res)
                     if res.type != EventType.NO_MORE_MSGS:
                         if not first and json_output :
-                            print(",")
-                    ret = await process_event_message(mc, res, json_output,end=end)
+                            output_str += ",\n"
+                    ret = await process_event_message(mc, res, json_output, end=end)
+                    output_str += ret
                     first = False
                 if json_output :
-                    print("]")
+                    output_str += "]\n"
 
             case "infos" | "i" :
                 await mc.commands.send_appstart()
-                print(json.dumps(mc.self_info,indent=4))
+                output_str += json.dumps(mc.self_info,indent=4)+"\n"
 
             case "advert" | "a":
                 res = await mc.commands.send_advert()
                 logger.debug(res)
                 if res.type == EventType.ERROR:
-                    print(f"Error sending advert: {res}")
+                    output_str += f"Error sending advert: {res}\n"
                 elif json_output :
-                    print(json.dumps(res.payload, indent=4))
+                    output_str += json.dumps(res.payload, indent=4)+"\n"
                 else:
-                    print("Advert sent")
+                    output_str += "Advert sent\n"
 
             case "flood_advert" | "floodadv":
                 res = await mc.commands.send_advert(flood=True)
                 logger.debug(res)
                 if res.type == EventType.ERROR:
-                    print(f"Error sending advert: {res}")
+                    output_str += f"Error sending advert: {res}\n"
                 elif json_output :
-                    print(json.dumps(res.payload, indent=4))
+                    output_str += json.dumps(res.payload, indent=4)+"\n"
                 else:
-                    print("Advert sent")
+                    output_str += "Advert sent\n"
 
             case "sleep" | "s" :
                 argnum = 1
@@ -3516,55 +3674,48 @@ async def next_cmd(mc, cmds, json_output=False):
                     if json_output:
                         await ps.prompt_async()
                     else:
-                        await ps.prompt_async("Press Enter to continue ...\n")
+                        with patch_stdout(raw=True):
+                            await ps.prompt_async("Press Enter to continue ...\n")
                 except (EOFError, KeyboardInterrupt, asyncio.CancelledError):
                     pass
 
             case "wait_msg" | "wm" :
                 ev = await mc.wait_for_event(EventType.MESSAGES_WAITING)
                 if ev is None:
-                    print("Timeout waiting msg")
+                    output_str += "Timeout waiting msg\n"
                 else:
                     res = await mc.commands.get_msg()
                     logger.debug(res)
-                    await process_event_message(mc, res, json_output)
+                    output_str += await process_event_message(mc, res, json_output)
 
             case "trywait_msg" | "wmt" :
                 argnum = 1
                 if await mc.wait_for_event(EventType.MESSAGES_WAITING, timeout=int(cmds[1])) :
                     res = await mc.commands.get_msg()
                     logger.debug(res)
-                    await process_event_message(mc, res, json_output)
+                    output_str += await process_event_message(mc, res, json_output)
 
             case "wmt8"|"]":
                 if await mc.wait_for_event(EventType.MESSAGES_WAITING, timeout=8) :
                     res = await mc.commands.get_msg()
                     logger.debug(res)
-                    await process_event_message(mc, res, json_output)
+                    output_str += await process_event_message(mc, res, json_output)
 
             case "wait_ack" | "wa" | "}":
                 res = await mc.wait_for_event(EventType.ACK, timeout = 5)
                 logger.debug(res)
                 if res is None:
                     if json_output :
-                        print(json.dumps({"error" : "Timeout waiting ack"}))
+                        output_str += json.dumps({"error" : "Timeout waiting ack"})+"\n"
                     else:
-                        print("Timeout waiting ack")
+                        output_str += "Timeout waiting ack\n"
                 elif json_output :
-                    print(json.dumps(res.payload, indent=4))
+                    output_str += json.dumps(res.payload, indent=4)+"\n"
                 else :
-                    print("Msg acked")
+                    output_str += "Msg acked\n"
 
             case "msgs_subscribe" | "ms" :
                 await subscribe_to_msgs(mc, json_output=json_output)
-
-            case "interactive" | "im" | "chat" :
-                await interactive_loop(mc)
-
-            case "chat_to" | "imto" | "to" :
-                argnum = 1
-                contact = await get_contact_from_arg(mc, cmds[1])
-                await interactive_loop(mc, to=contact)
 
             case "script" :
                 if len(cmds) > 1:
@@ -3573,37 +3724,40 @@ async def next_cmd(mc, cmds, json_output=False):
                 else:
                     file_name = await prompt_for_file()
                 if not file_name is None:
-                    await process_script(mc, file_name, json_output=json_output)
+                    output_str += await process_script(mc, file_name, json_output=json_output, sink=sink)
 
             case _ :
-                contact = await get_contact_from_arg(mc, cmds[0])
-                if contact is None:
-                    logger.error(f"Unknown command : {cmd}, {cmds} not executed ...")
-                    return None
-
-                await interactive_loop(mc, to=contact)
+                logger.error(f"Unknown command : {cmd}, {cmds} not executed ...")
+                return (None, output_str)
 
         logger.debug(f"cmd {cmds[0:argnum+1]} processed ...")
-        return cmds[argnum+1:]
+        return (cmds[argnum+1:], output_str)
 
     except IndexError:
         logger.error("Error in parameters")
-        return None
+        return (None, "")
     except (EOFError, KeyboardInterrupt):
         logger.error("Cancelled")
-        return None
+        return (None, "")
 
-async def process_cmds (mc, args, json_output=False) :
+async def process_cmds (mc, args, json_output=False, sink=sys.stdout, end="\n") :
     cmds = args
+    output_str = ""
     while cmds and len(cmds) > 0 and cmds[0][0] != '#' :
-        cmds = await next_cmd(mc, cmds, json_output)
+        (cmds, cur_output) = await next_cmd(mc, cmds, json_output, sink=sink, end=end)
+        if not cur_output is None:
+            sink.write(cur_output)
+            sink.flush()
+    return
 
-async def process_script(mc, file, json_output=False):
+async def process_script(mc, file, json_output=False, sink=sys.stdout):
+    output_str = ""
+
     if not os.path.exists(file) :
         logger.info(f"file {file} not found")
         if json_output :
-            print(json.dumps({"error" : f"file {file} not found"}))
-        return
+            output_str += json.dumps({"error" : f"file {file} not found"})+"\n"
+        return output_str
 
     with open(file, "r") as f :
         lines=f.readlines()
@@ -3614,9 +3768,10 @@ async def process_script(mc, file, json_output=False):
             logger.debug(f"processing {line}")
             try :
                 cmds = shlex.split(line)
-                await process_cmds(mc, cmds, json_output)
+                await process_cmds(mc, cmds, json_output, sink=sink)
             except ValueError:
                 logger.error(f"Error processing {line}")
+    return output_str
 
 def version():
     print (f"meshcore-cli: command line interface to MeshCore companion radios {VERSION}")
@@ -3624,8 +3779,6 @@ def version():
 def command_help():
     print("""    ?<cmd> may give you some more help about cmd
   General commands
-    chat                   : enter the chat (interactive) mode
-    chat_to <ct>           : enter chat with contact                to
     script <filename>      : execute commands in filename
     infos                  : print informations about the node      i
     self_telemetry         : print own telemtry                     t
@@ -3706,6 +3859,7 @@ def command_usage() :
  Arguments :
     -h : prints help for arguments and commands
     -v : prints version
+    -i : force interactive loop after executing commands
     -j : json output (disables init file)
     -D : debug (sets logging to DEBUG)
     -q : quiet (sets logging to ERROR)
@@ -3905,7 +4059,7 @@ To remove a channel, use remove_channel, either with channel name or number.
     elif cmdname == "trace" or cmdname == "tr" :
         print("""Trace
 
-Trace is a command used to get signal information (SNR) along a path. 
+Trace is a command used to get signal information (SNR) along a path.
 
 Basic call to trace takes the path to follow as an argument, specifying each repeater along the path with its hash (separated or not with a comma).
 
@@ -3958,9 +4112,9 @@ meshcore-cli provides some functions to manage path :
  * advert_path  : path taken by an advert
  * disc_path    : discover in and out path for a contact
 
-When using change_path, you specify manually the path to the contact. Path is given as an hex string containing hashes for all repeaters in the way (you can use commas to separate hashes). By default hash_size will be the one of the node. If using commas, it will be guessed from first hash. You can also use a colon to specify path_hash_mode. 
+When using change_path, you specify manually the path to the contact. Path is given as an hex string containing hashes for all repeaters in the way (you can use commas to separate hashes). By default hash_size will be the one of the node. If using commas, it will be guessed from first hash. You can also use a colon to specify path_hash_mode.
 
-If you want to set the path for a node through 112233 445566 778899, you can use 
+If you want to set the path for a node through 112233 445566 778899, you can use
  - 114477:0 or 11,44,77 for one byte hash
  - 112244557788:1 or 1122,4455,7788 for two byte hash
  - 112233445566778899:2 or 112233,445566,778899 for three byte hash
@@ -3968,7 +4122,7 @@ If you want to set the path for a node through 112233 445566 778899, you can use
 To set an empty path use 0.
 
 To get the path for a contact, you can use three commands:
- - path will gives you the path stored in the node. 
+ - path will gives you the path stored in the node.
  - You can also get a path from a key using advert_path which will give you the path taken for last advert from that node to come.
  disc_path will send a path request and give you input and output path for a node.
 
@@ -4178,7 +4332,7 @@ async def process_repeater_line(ser, cmd, echo=False, repeater_name=None) :
             else :
                 file_path = cmd.lower().split(" ", 3)[2]
 
-            file_path = file_path.replace("~", str(Path.home()))
+            file_path = file_path.replace("~", HOME_DIR)
             with open(file_path, "r") as file:
                 ser.write("region load\r".encode())
                 for line in file:
@@ -4205,7 +4359,7 @@ async def process_repeater_line(ser, cmd, echo=False, repeater_name=None) :
             else :
                 file_path = cmd.lower().split(" ", 3)[2]
 
-            file_path = file_path.replace("~", str(Path.home()))
+            file_path = file_path.replace("~", HOME_DIR)
 
             with open(file_path, "w") as file:
                 # write header (name and timestamp)
@@ -4245,7 +4399,7 @@ async def process_repeater_line(ser, cmd, echo=False, repeater_name=None) :
             else :
                 file_path = cmd.lower().split(" ", 2)[1]
 
-            file_path = file_path.replace("~", str(Path.home()))
+            file_path = file_path.replace("~", HOME_DIR)
 
             return await process_repeater_script(ser, file_path)
 
@@ -4414,6 +4568,7 @@ async def main(argv):
     pin = None
     first_device = False
     quiet = False
+    force_interactive = False
     # If there is an address in config file, use it by default
     # unless an arg is explicitely given
     if os.path.exists(MCCLI_ADDRESS) :
@@ -4421,13 +4576,15 @@ async def main(argv):
             address = f.readline().strip()
 
     try:
-        opts, args = getopt.getopt(argv, "a:d:s:ht:p:b:fjDhvSlT:Pc:Crq")
+        opts, args = getopt.getopt(argv, "a:d:s:ht:p:b:fjDhvSlT:Pc:Crqi")
     except getopt.GetoptError:
         print("Unrecognized option, use -h to get more help")
         command_usage()
         return
     for opt, arg in opts :
         match opt:
+            case "-i" :
+                force_interactive = True
             case "-c" :
                 if arg == "off":
                     process_event_message.color = False
@@ -4555,7 +4712,7 @@ async def main(argv):
             logger.error("To connect to a repeater, use -r option.")
     elif BLEAK_AVAILABLE : # connect via ble
         client = None
-        if device or address and len(address.split(":")) == 6 :
+        if device or (address and len(address.split(":"))) == 6 :
             pass
         elif address and len(address) == 36 and len(address.split("-")) == 5:
             client = BleakClient(address) # mac uses uuid, we'll pass a client
@@ -4671,19 +4828,20 @@ async def main(argv):
 
     if os.path.exists(MCCLI_INIT_SCRIPT) and not json_output :
         logger.debug(f"Executing init script : {MCCLI_INIT_SCRIPT}")
-        await process_script(mc, MCCLI_INIT_SCRIPT, json_output)
+        print(await process_script(mc, MCCLI_INIT_SCRIPT, json_output, sink=sys.stdout), end="")
 
     device_init_script = MCCLI_CONFIG_DIR + mc.self_info["name"] + ".init"
     if os.path.exists(device_init_script) :
         logger.info(f"Executing device init script : {device_init_script}")
-        await process_script(mc, device_init_script, json_output)
+        print(await process_script(mc, device_init_script, json_output, sink=sys.stdout), end="")
     else:
         logger.debug(f"No device init script for {mc.self_info['name']}")
 
-    if len(args) == 0 : # no args, run in chat mode
-        await process_cmds(mc, ["chat"], json_output)
-    else:
-        await process_cmds(mc, args, json_output)
+    if len(args) > 0 :
+        await process_cmds(mc, args, json_output, sink=sys.stdout)
+
+    if len(args) == 0 or force_interactive :
+        await interactive_loop(mc, json_output=json_output)
 
 def cli():
     try:
