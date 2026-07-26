@@ -1225,6 +1225,8 @@ async def process_slash_cmd(mc, line, json_output=False, sink=sys.stdout):
     return True
 
 async def process_contact_chat_line(mc, contact, line, json_output=False, sink=sys.stdout):
+    # tries several command path for a contact
+    # if a path is successfull, return True
     if contact["type"] == 0:
         return False
 
