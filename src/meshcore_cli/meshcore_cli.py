@@ -505,6 +505,7 @@ def make_completion_dict(contacts, pending={}, to=None, channels=None):
         "apply_to": None,
         "at": None,
         "scope": None,
+        "shell": None,
         "set" : {
             "name" : None,
             "pin" : None,
@@ -3717,6 +3718,12 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
             case "msgs_subscribe" | "ms" :
                 await subscribe_to_msgs(mc, json_output=json_output)
 
+            case "shell" | "sh" :
+                argnum = 1
+                result = subprocess.run(cmds[1], shell=True,
+                    stdout=subprocess.PIPE, text=True)
+                sink.write(result.stdout)
+
             case "script" :
                 if len(cmds) > 1:
                     argnum = 1
@@ -3788,6 +3795,7 @@ def command_help():
     sleep <secs>           : sleeps for a given amount of secs      s
     wait_key               : wait until user presses <Enter>        wk
     apply_to <f> <cmds>    : sends cmds to contacts matching f      at
+    shell <cmd>            : executes a shell command from mccli    sh
   Messaging
     msg <name> <msg>       : send message to node by name           m  {
     wait_ack               : wait an ack                            wa }
