@@ -1224,11 +1224,41 @@ async def process_slash_cmd(mc, line, json_output=False, sink=sys.stdout):
 
     return True
 
-async def process_contact_chat_line(mc, contact, line, json_output=False, sink=sys.stdout):
+async def process_contact_chat_line(mc, contact, line, inside=False, json_output=False, sink=sys.stdout, end="\n"):
     # tries several command path for a contact
     # if a path is successfull, return True
     if contact["type"] == 0:
         return False
+
+    async def process_second(first_str):
+        nonlocal out_str
+        res = first_str
+        if " " in line:
+            secline = line.split(" ", 1)[1]
+            with io.StringIO() as strm:
+                await process_contact_chat_line(mc, contact, secline, inside=True, json_output=json_output, sink=strm, end=end)
+                sec_str = strm.getvalue()
+            if sec_str != "" :
+                if json_output:
+                    res = res + ", " + sec_str
+                    if not inside and first_str != "" :
+                        res = "[" + res + "]\n"
+                elif first_str != "" :
+                    res = res + " " + sec_str
+                else:
+                    res = sec_str
+
+        elif res != "" and (not (json_output and inside)):
+            res += end
+
+        sink.write(res)
+        sink.flush()
+
+    def make_value(key, value):
+        if json_output:
+            return json.dumps({key: value})
+        else:
+            return value
 
     # if one element in line (most cases) strip the scope and apply it
     if not " " in line and "%" in line:
@@ -1247,57 +1277,34 @@ async def process_contact_chat_line(mc, contact, line, json_output=False, sink=s
         return True
 
     if line.startswith("contact_key") or line.startswith("ck"):
-        sink.write(contact['public_key'])
-        if " " in line:
-            sink.write(" ")
-            secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc, contact, secline, json_output=json_output, sink=sink)
-        else:
-            sink.write("\n")
-        sink.flush()
+        await process_second(make_value("public_key", contact['public_key']))
         return True
 
     if line.startswith("contact_type") or line.startswith("ct"):
-        sink.write(f"{CONTACT_TYPENAMES[contact['type']]:4}")
-        if " " in line:
-            sink.write(" ")
-            secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc, contact, secline, json_output=json_output, sink=sink)
-        else:
-            sink.write("\n")
-        sink.flush()
+        await process_second(make_value("contact_type", f"{CONTACT_TYPENAMES[contact['type']]:4}"))
         return True
 
     if line.startswith("contact_name") or line.startswith("cn"):
-        sink.write(contact['adv_name'])
-        if " " in line:
-            sink.write(" ")
-            secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc, contact, secline, json_output=json_output, sink=sink)
-        else:
-            sink.write("\n")
-        sink.flush()
+        await process_second(make_value("adv_name", contact['adv_name']))
         return True
 
     if line.startswith("contact_lastmod"):
+        out_str = ""
         timestamp = contact["lastmod"]
-        sink.write(f"{contact['adv_name']} updated"\
-              + f" {datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d at %H:%M:%S')}"\
-              + f" ({timestamp})")
-        if " " in line:
-            sink.write(" ")
-            secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc,contact, secline, json_output=json_output, sink=sink)
+        if json_output:
+            out_str = make_value("lastmod", timestamp)
         else:
-            sink.write("\n");
-        sink.flush()
+            out_str = f"{contact['adv_name']} updated"\
+              + f" {datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d at %H:%M:%S')}"\
+              + f" ({timestamp})"
+        await process_second(out_str)
         return True
 
     if line.startswith("path") :
         if contact['out_path_len'] == -1:
-            sink.write("Flood")
+            out_str = "Flood"
         elif contact['out_path_len'] == 0:
-            sink.write("0 hop")
+            out_str = "0 hop"
         else:
             plen = contact['out_path_len']
             phs = contact['out_path_hash_mode']+1
@@ -1305,14 +1312,8 @@ async def process_contact_chat_line(mc, contact, line, json_output=False, sink=s
             path_str = path_str_in[:2*phs]
             for i in range(1,plen):
                 path_str = path_str + "," + path_str_in[i*phs*2:(i+1)*2*phs]
-            sink.write(f"{path_str}")
-        if " " in line:
-            sink.write(" ")
-            secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc, contact, secline, json_output=json_output, sink=sink)
-        else:
-            sink.write("\n")
-        sink.flush()
+            out_str = f"{path_str}"
+        await process_second(make_value("path", out_str))
         return True
 
     if line.startswith("sleep ") or line.startswith("s "):
@@ -1329,7 +1330,7 @@ async def process_contact_chat_line(mc, contact, line, json_output=False, sink=s
         try:
             if cmd_pos > 0:
                 secline = line.split(" ",cmd_pos)[cmd_pos]
-                await process_contact_chat_line(mc, contact, secline, json_output=json_output, sink=sink)
+                await process_contact_chat_line(mc, contact, secline, inside=inside, json_output=json_output, sink=sink, end=end)
                 sink.flush()
         except IndexError:
             pass
@@ -1357,10 +1358,11 @@ async def process_contact_chat_line(mc, contact, line, json_output=False, sink=s
             line.startswith("advert_path") or line.startswith("ap") or\
             line.startswith("logout") :
         args = [line.split()[0], contact['adv_name']]
-        await process_cmds(mc, args, json_output=json_output, sink=sink)
-        if " " in line:
-            secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc, contact, secline, json_output=json_output, sink=sink)
+        out_str = ""
+        with io.StringIO() as strm:
+            await process_cmds(mc, args, json_output=json_output, sink=strm)
+            out_str = strm.getvalue()
+        await process_second(out_str)
         return True
 
     # special case for rp that can be chained from cmdline
@@ -1368,7 +1370,7 @@ async def process_contact_chat_line(mc, contact, line, json_output=False, sink=s
         args = ["rp", contact['adv_name']]
         await process_cmds(mc, args, json_output=json_output, sink=sink)
         secline = line.split(" ", 1)[1]
-        await process_contact_chat_line(mc, contact, secline, json_output=json_output, sink=sink)
+        await process_contact_chat_line(mc, contact, secline, inside=inside, json_output=json_output, sink=sink, end=end)
         return True
 
     if line.startswith("set timeout "):
@@ -1377,7 +1379,11 @@ async def process_contact_chat_line(mc, contact, line, json_output=False, sink=s
         return True
 
     if line == "get timeout":
-        sink.write(f"timeout: {0 if not 'timeout' in contact else contact['timeout']}\n")
+        timeout_str = f"timeout: {0 if not 'timeout' in contact else contact['timeout']}"
+        if json_output:
+            sink.write(json.dumps({"timeout": timeout_str}))
+        else:
+            sink.write(timeout_str + "\n")
         sink.flush()
         return True
 
@@ -1425,11 +1431,17 @@ async def process_contact_chat_line(mc, contact, line, json_output=False, sink=s
 
     # trace called on a contact
     if line == "trace" or line == "tr" :
-        await print_trace_to(mc, contact, json_output=json_output, sink=sink)
+        out_str = ""
+        with io.StringIO() as strm:
+            await print_trace_to(mc, contact, json_output=json_output, sink=strm)
+            await process_second(make_value("trace", strm.getvalue()))
         return True
 
     if line == "dtrace" or line == "dt" :
-        await print_disc_trace_to(mc, contact, json_output=json_output, sink=sink)
+        out_str = ""
+        with io.StringIO() as strm:
+            await print_disc_trace_to(mc, contact, json_output=json_output, sink=strm)
+            await process_second(make_value("trace", strm.getvalue()))
         return True
 
     # same but for commands with a parameter
@@ -1495,7 +1507,7 @@ async def process_contact_chat_line(mc, contact, line, json_output=False, sink=s
             os.remove(password_file)
         try:
             secline = line.split(" ", 1)[1]
-            await process_contact_chat_line(mc, contact, secline, json_output=json_output, sink=sink)
+            await process_contact_chat_line(mc, contact, secline, inside=inside, json_output=json_output, sink=sink, end=end)
         except IndexError:
             pass
         return True
