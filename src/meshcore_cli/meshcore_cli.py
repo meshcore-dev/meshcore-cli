@@ -1112,50 +1112,7 @@ async def process_line(mc, line, contact, prev_contact, scope, prev_scope, json_
         sink.write("\n")
 
     elif line.startswith("/") :
-        path = line.split(" ", 1)[0]
-        if path.count("/") == 1:
-            args = line[1:].split(" ")
-            dest = args[0]
-            dest_scope = None
-            if "%" in dest :
-                dest_scope = dest.split("%")[-1]
-                dest = dest[:-len(dest_scope)-1]
-                await set_scope (mc, dest_scope)
-            tct = await get_contact_from_arg(mc, dest)
-            if len(args)>1 and not tct is None: # a contact, send a message
-                if tct["type"] == 1 or tct["type"] == 3: # client or room
-                    last_ack = await msg_ack(mc, tct, line.split(" ", 1)[1])
-                else:
-                    sink.write("Can only send msg to chan, client or room\n")
-            else :
-                ch = await get_channel_by_name(mc, dest)
-                if len(args)>1 and not ch is None: # a channel, send message
-                    await send_chan_msg(mc, ch["channel_idx"], line.split(" ", 1)[1])
-                else :
-                    try :
-                        await process_cmds(mc, shlex.split(line[1:]), json_output=json_output, sink=sink)
-                    except ValueError:
-                        logger.error(f"Error processing line{line[1:]}")
-        else:
-            cmdline = line[1:].split("/",1)[1]
-            contact_name = path[1:].split("/",1)[0]
-            dest_scope = None
-            if "%" in contact_name:
-                dest_scope = contact_name.split("%")[-1]
-                contact_name = contact_name[:-len(dest_scope)-1]
-                await set_scope (mc, dest_scope)
-            tct = await get_contact_from_arg(mc, contact_name)
-            if tct is None:
-                sink.write(f"{contact_name} is not a contact\n")
-            else:
-                if await process_contact_chat_line(mc, tct, cmdline, json_output=json_output, sink=sink):
-                    pass
-                else:
-                    if cmdline != "":
-                        if tct["type"] == 1:
-                            last_ack = await msg_ack(mc, tct, cmdline)
-                        else :
-                            await process_cmds(mc, ["cmd", tct["adv_name"], cmdline], json_output=json_output, sink=sink)
+        last_ack = await process_slash_cmd(mc, line, json_output=json_output, sink=sink)
 
     # commands that take one parameter (don't need quotes)
     elif line.startswith("public ") :
@@ -1218,6 +1175,54 @@ async def process_line(mc, line, contact, prev_contact, scope, prev_scope, json_
     sink.flush()
     return (contact, scope, last_ack)
 
+async def process_slash_cmd(mc, line, json_output=False, sink=sys.stdout):
+    path = line.split(" ", 1)[0]
+    if path.count("/") == 1:
+        args = line[1:].split(" ")
+        dest = args[0]
+        dest_scope = None
+        if "%" in dest :
+            dest_scope = dest.split("%")[-1]
+            dest = dest[:-len(dest_scope)-1]
+            await set_scope (mc, dest_scope)
+        tct = await get_contact_from_arg(mc, dest)
+        if len(args)>1 and not tct is None: # a contact, send a message
+            if tct["type"] == 1 or tct["type"] == 3: # client or room
+                last_ack = await msg_ack(mc, tct, line.split(" ", 1)[1])
+            else:
+                sink.write("Can only send msg to chan, client or room\n")
+        else :
+            ch = await get_channel_by_name(mc, dest)
+            if len(args)>1 and not ch is None: # a channel, send message
+                await send_chan_msg(mc, ch["channel_idx"], line.split(" ", 1)[1])
+            else :
+                try :
+                    await process_cmds(mc, shlex.split(line[1:]), json_output=json_output, sink=sink)
+                except ValueError:
+                    logger.error(f"Error processing line{line[1:]}")
+    else:
+        cmdline = line[1:].split("/",1)[1]
+        contact_name = path[1:].split("/",1)[0]
+        dest_scope = None
+        if "%" in contact_name:
+            dest_scope = contact_name.split("%")[-1]
+            contact_name = contact_name[:-len(dest_scope)-1]
+            await set_scope (mc, dest_scope)
+        tct = await get_contact_from_arg(mc, contact_name)
+        if tct is None:
+            sink.write(f"{contact_name} is not a contact\n")
+        else:
+            if await process_contact_chat_line(mc, tct, cmdline, json_output=json_output, sink=sink):
+                pass
+            else:
+                if cmdline != "":
+                    if tct["type"] == 1:
+                        return await msg_ack(mc, tct, cmdline)
+                    else :
+                        await process_cmds(mc, ["cmd", tct["adv_name"], cmdline], json_output=json_output, sink=sink)
+                        return True
+
+    return True
 
 async def process_contact_chat_line(mc, contact, line, json_output=False, sink=sys.stdout):
     if contact["type"] == 0:
