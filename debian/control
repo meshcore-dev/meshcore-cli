@@ -1,0 +1,34 @@
+Source: meshcore-cli
+Maintainer: Florent de Lamotte <florent@frizoncorrea.fr>
+Homepage: https://github.com/fdlamotte/meshcore-cli
+Section: utils
+Priority: optional
+Standards-Version: 4.6.2
+Build-Depends: debhelper-compat (= 13),
+               dh-python,
+               pybuild-plugin-pyproject,
+               python3-all,
+               python3-hatchling,
+               python3-setuptools
+Vcs-Browser: https://github.com/fdlamotte/meshcore-cli
+Vcs-Git: https://github.com/fdlamotte/meshcore-cli.git
+
+Package: meshcore-cli
+Architecture: all
+Depends: python3 (>= 3.10),
+         python3-meshcore (>= 2.3.7),
+         python3-bleak (>= 0.22),
+         python3-prompt-toolkit (>= 3.0.50),
+         python3-requests (>= 2.28.0)
+Description: CLI interface to MeshCore companion radios and repeaters
+ meshcore-cli is a tool that connects to your companion radio node
+ (meshcore client) over BLE, TCP or Serial and lets you interact with it
+ from a terminal using a command line interface.
+ .
+ Features:
+  - Interactive chat mode with mesh nodes
+  - Support for BLE, TCP, and Serial connections
+  - Message sending and receiving
+  - Repeater login and command execution
+  - Trace path visualization
+  - Script execution support

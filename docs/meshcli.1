@@ -1,0 +1,196 @@
+.TH MESHCLI 1 "May 05 2026" "meshcore-cli 1.5.7" "User Commands"
+.SH NAME
+meshcli \- CLI interface to MeshCore companion radios and repeaters
+.SH SYNOPSIS
+.B meshcli
+[\fIOPTIONS\fR] [\fICOMMANDS\fR...]
+.SH DESCRIPTION
+.B meshcli
+(also available as
+.B meshcore-cli
+) is a command line interface to interact with MeshCore companion radios and repeaters
+over BLE, TCP, or Serial connections.
+
+It allows you to send commands to your companion radio node, manage contacts, send/receive
+messages, and interact with repeaters in both interactive and scripted modes.
+
+The default behavior (with no commands) enters interactive chat mode.
+.SH OPTIONS
+.TP
+.B \-h
+Print help information and exit.
+.TP
+.B \-v
+Print version information and exit.
+.TP
+.B \-S
+Scan for available BLE devices and show an interactive selector.
+.TP
+.B \-l
+List available BLE/serial devices and exit.
+.TP
+.B \-j
+Enable JSON output for all commands (disables init file).
+.TP
+.B \-D
+Enable debug logging output.
+.TP
+.B \-T \fITIMEOUT\fR
+Set BLE scan timeout in seconds (default: 2s). Used with \-S and \-l.
+.TP
+.B \-a \fIADDRESS\fR
+Specify device address (can be MAC address, UUID, or device name).
+.TP
+.B \-d \fINAME\fR
+Filter MeshCore devices by name or address.
+.TP
+.B \-P
+Force pairing via the OS.
+.TP
+.B \-t \fIHOSTNAME\fR
+Connect via TCP/IP instead of BLE.
+.TP
+.B \-p \fIPORT\fR
+Specify TCP port (default: 5000).
+.TP
+.B \-s \fIPORT\fR
+Use serial port for connection (e.g., /dev/ttyUSB0).
+.TP
+.B \-b \fIBAUDRATE\fR
+Specify serial port baud rate.
+.TP
+.B \-r
+Enable raw repeater mode (serial direct to repeater firmware CLI).
+.TP
+.B \-C
+Toggle classic mode for prompt display.
+.TP
+.B \-c \fION|OFF\fR
+Enable or disable color output.
+
+.SH COMMANDS
+.SS General Commands
+.TP
+.B chat
+Enter interactive chat mode (default with no commands).
+.TP
+.B chat_to \fICONTACT\fR
+Enter chat mode with a specific contact.
+.TP
+.B script \fIFILENAME\fR
+Execute commands from a script file.
+.TP
+.B infos
+Print information about the connected node.
+.TP
+.B ver
+Display firmware version.
+.TP
+.B reboot
+Reboot the connected device.
+.TP
+.B clock
+Display or sync device time.
+
+.SS Messaging Commands
+.TP
+.B msg \fINAME\fR \fIMESSAGE\fR
+Send a message to a contact by name.
+.TP
+.B chan \fICHANNEL\fR \fIMESSAGE\fR
+Send message to a specific channel.
+.TP
+.B public \fIMESSAGE\fR
+Send message to public channel (0).
+.TP
+.B recv
+Read next received message.
+.TP
+.B wait_msg
+Wait for a message and display it.
+
+.SS Contact Management
+.TP
+.B list
+List all available contacts.
+.TP
+.B to \fICONTACT\fR
+Set current recipient for messages.
+
+.SS Repeater Commands
+.TP
+.B login \fINAME\fR \fIPASSWORD\fR
+Login to a repeater.
+.TP
+.B logout \fINAME\fR
+Logout from a repeater.
+.TP
+.B cmd \fINAME\fR \fICOMMAND\fR
+Send a command to a repeater.
+
+.SS Advanced
+.TP
+.B trace \fIPATH\fR
+Run a path trace to visualize signal strength along a route.
+.TP
+.B help
+Display help information.
+.TP
+.B ?COMMAND
+Get detailed help for a specific command.
+
+.SH CONFIGURATION FILES
+.TP
+.B $HOME/.config/meshcore/default_address
+Stores the MAC address or UUID of the last used BLE device.
+.TP
+.B $HOME/.config/meshcore/init
+Global initialization script executed before commands.
+.TP
+.B $HOME/.config/meshcore/<device-name>.init
+Device-specific initialization script.
+.TP
+.B $HOME/.config/meshcore/history
+REPL command history for interactive mode.
+
+.SH OUTPUT MODES
+Commands can be prefixed with a dot (.)
+to force JSON output instead of human-readable output. Alternatively, use the
+.B \-j
+flag to enable JSON output globally.
+
+Example: `meshcli .clock` outputs JSON format, while `meshcli clock` outputs text.
+
+.SH EXAMPLES
+.TP
+Select and connect to a BLE device:
+.B meshcli \-S chat
+.TP
+Get device information in JSON format:
+.B meshcli \-j infos
+.TP
+Send a message to a contact:
+.B meshcli msg mycontact "Hello there"
+.TP
+Connect via TCP and check device time:
+.B meshcli \-t 192.168.1.100 \-p 5000 clock
+.TP
+Connect to a repeater via serial and enter interactive mode:
+.B meshcli \-r \-s /dev/ttyUSB0
+.TP
+Execute a command script:
+.B meshcli script commands.txt
+
+.SH AUTHOR
+Written by Florent de Lamotte <florent@frizoncorrea.fr>
+
+.SH SEE ALSO
+.B meshcore-cli
+is an alias to
+.B meshcli
+.
+
+For more information visit: https://github.com/fdlamotte/meshcore-cli
+
+.SH LICENSE
+MIT License. See LICENSE file in the source repository.

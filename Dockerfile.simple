@@ -1,0 +1,34 @@
+# Simpler, more reliable build for meshcore-cli
+FROM python:3.10-slim
+
+LABEL maintainer="Florent de Lamotte <florent@frizoncorrea.fr>"
+LABEL description="CLI interface to MeshCore companion radios and repeaters"
+
+WORKDIR /build
+
+# Copy project files
+COPY . .
+
+# Install build and runtime dependencies in one step
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    python3-dev \
+    libdbus-1-3 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip and install the package directly from source
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -e . && \
+    # Clean up source after installation
+    cd / && rm -rf /build
+
+# Create a non-root user
+RUN useradd -m -u 1000 meshcore
+USER meshcore
+
+WORKDIR /home/meshcore
+
+# Set entrypoint
+ENTRYPOINT ["meshcli"]
+CMD ["-h"]

@@ -1,0 +1,76 @@
+name: Build Debian Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+    container: debian:bookworm
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            build-essential \
+            ca-certificates \
+            debhelper-compat \
+            devscripts \
+            dh-python \
+            equivs \
+            fakeroot \
+            git \
+            python3-installer \
+            python3-pip
+          mk-build-deps --install --remove --tool 'apt-get -y --no-install-recommends' debian/control
+
+      - name: Build Debian package
+        working-directory: ${{ github.workspace }}
+        run: debuild -us -uc -b
+
+      - name: Build Debian dependency packages
+        run: packaging/build-python-dependency-debs.sh
+
+      - name: Collect Debian package files
+        run: |
+          mkdir -p dist/debian
+          cp ../meshcore-cli*.deb ../meshcore-cli*.changes dist/debian/
+          ls -l dist/debian/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: debian-package
+          path: |
+            dist/debian/*.deb
+            dist/debian/*.changes
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Debian package to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            dist/debian/*.deb
+            dist/debian/*.changes
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          echo "Debian package built and uploaded to release"
