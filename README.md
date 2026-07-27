@@ -176,9 +176,9 @@ If you start the line with `.` it activates `json_output` for this execution, le
 
 Flood scope has recently been introduced in meshcore (from `v1.10.0`). It limits the scope of packets to regions, using transport codes in the frame.
 
-When entering chat mode, scope will be reset to `*`, meaning classic flood.
+When entering chat mode, scope will be set to "0" meaning default scope of the node will be used (settable using `set default_scope`). The scope will not be shown on the prompt.
 
-You can switch scope using the `scope` command, or postfixing the `to` command with `%<scope>`.
+You can switch scope using the `scope` command or postfixing the `to` command with `%<scope>`, this is a temporary scope that will be shown on the prompt. If you want to send unscoped message, do it by issuing `scope *`.
 
 Scope can also be applied to a command using `%` before the scope name. For instance `login%#Morbihan` will limit diffusion of the login command (which is usually sent flood to get the path to a repeater) to the `#Morbihan` region.
 
