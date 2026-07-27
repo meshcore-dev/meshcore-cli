@@ -93,12 +93,24 @@ SLASH_END = f"{ANSI_RESET_BACK}"
 SLASH_START = f"{ANSI_GRAY_BACK}"
 INVERT_SLASH = False
 
+def split_first_token(line):
+    lexer = shlex.shlex(line, posix=True)
+    lexer.whitespace_split = True
+
+    target = lexer.get_token()
+    command = lexer.instream.read().lstrip()
+
+    if target is None or not command:
+        raise ValueError ("Expected a target and a command")
+
+    return target, command
+
 def escape_ansi(line):
     ansi_escape = re.compile(r'(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]')
     return ansi_escape.sub('', line)
 
 async def process_event_message(mc, ev, json_output, end="\n"):
-    """ display incoming message 
+    """ display incoming message
     """
     output_str = ""
     if ev is None :
@@ -951,7 +963,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                     fp, mcline = split_first_token(line)
                     fp = fp.replace("~", HOME_DIR)
                     with open(fp, "a") as file:
-                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, prev_contact, scope, prev_scope, json_output=jo, sink=file)
+                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=jo, sink=file)
                 except ValueError:
                     logger.error("Couldn't parse filename")
                     continue
@@ -965,7 +977,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                     fp, mcline = split_first_token(line)
                     fp = fp.replace("~", HOME_DIR)
                     with open(fp, "w") as file:
-                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, prev_contact, scope, prev_scope, json_output=jo, sink=file)
+                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=jo, sink=file)
                 except ValueError:
                     logger.error("Couldn't parse filename")
                     continue
@@ -977,8 +989,8 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                 line = line[1:].strip()
                 try:
                     pcom, mcline = split_first_token(line)
-                    with subprocess.Popen(shlex.split(pcom), stdin=subprocess.PIPE, text=True) as process:
-                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, prev_contact, scope, prev_scope, json_output=jo, sink=process.stdin)
+                    with subprocess.Popen(shlex.split(pcom, posix=True), stdin=subprocess.PIPE, text=True) as process:
+                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=jo, sink=process.stdin)
                 except ValueError:
                     logger.error("Couldn't parse name")
                     continue
@@ -995,7 +1007,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                     logger.error(f"Broken pipe")
                     continue
             else :
-                (new_contact, new_scope, last_ack) = await process_line(mc, line, contact, prev_contact, scope, prev_scope, json_output=jo, sink=sink)
+                (new_contact, new_scope, last_ack) = await process_line(mc, line, contact, scope, prev_contact, prev_scope, json_output=jo, sink=sink)
 
             if new_contact != contact :
                 prev_contact = contact
@@ -1018,29 +1030,109 @@ if platform.system() == "Darwin" or platform.system() == "Windows":
 else:
     interactive_loop.classic = False
 
-def split_first_token(line):
-    lexer = shlex.shlex(line, posix=True)
-    lexer.whitespace_split = True
+# Helper functions to execute commands using $()
+# split finds the command
+def split_next_command(input_string):
+    """
+    Finds the first active outermost $(cmd)
+    """
+    i = 0
+    cleaned_before = []
 
-    target = lexer.get_token()
-    command = lexer.instream.read().lstrip()
+    while i < len(input_string):
+        # 1. Handle escape characters in the 'before' segment
+        if input_string[i] == '\\':
+            if i + 1 < len(input_string):
+                # Append the escaped character directly to bypass token checks
+                cleaned_before.append(input_string[i + 1])
+                i += 2
+            else:
+                # Handle trailing backslash safely
+                cleaned_before.append('\\')
+                i += 1
+            continue  # Move immediately to the next iteration
 
-    if target is None or not command:
-        raise ValueError ("Expected a target and a command")
+        # 2. Detect an unescaped command start
+        if input_string[i:i+2] == "$(":
+            paren_balance = 1
+            k = i + 2
 
-    return target, command
+            while k < len(input_string):
+                # Skip any escaped characters inside $(cmd) to protect \( and \)
+                if input_string[k] == '\\':
+                    k += 2
+                    continue
 
-async def process_line(mc, line, contact, prev_contact, scope, prev_scope, json_output=False, sink=sys.stdout):
+                # Track nested unescaped subcommands
+                if input_string[k:k+2] == "$(":
+                    paren_balance += 1
+                    k += 2
+                    continue
+
+                # Track closing parentheses
+                if input_string[k] == ")":
+                    paren_balance -= 1
+                    if paren_balance == 0:
+                        before = "".join(cleaned_before)
+                        return before, input_string[i+2:k], input_string[k+1:]
+                    k += 1
+                    continue
+
+                k += 1
+
+        # 3. Normal character in the 'before' segment
+        cleaned_before.append(input_string[i])
+        i += 1
+
+    return "".join(cleaned_before), None, ""
+
+# resolve deals with imbrication and calls process_line
+# it is called both from process_line and process_cmds
+# if called from the interactive, loop, resolution should be done from process_line
+# and process_cmds has nothing to do, but in case of scripts or arguments the
+# commands will be executed
+# beware, substitutions work differently (because of the tokenizer call)
+async def resolve_cli_string(mc, arg_string, contact=None, scope="*", json_output=False, end="\n"):
+    """
+    Iteratively resolves and executes commands from the inside out.
+    """
+    before, command, after = split_next_command(arg_string)
+    cmd_buffer = before
+
+    while command is not None:
+        # Resolve nested commands first
+        resolved_sub = await resolve_cli_string(mc, command, contact, scope, json_output, end)
+
+        with io.StringIO() as strm:
+            await process_line(mc, resolved_sub, contact, scope, json_output=json_output, sink=strm, end=end)
+            cmd_buffer += strm.getvalue()
+
+        before, command, after = split_next_command(after)
+        cmd_buffer += before
+
+    cmd_buffer += after
+
+    # remove new lines
+    cmd_buffer = cmd_buffer.replace("\n", "").replace("\r", "")
+    return cmd_buffer
+
+async def process_line(mc, line, contact=None, scope="*", prev_contact=None, prev_scope="*", json_output=False, sink=sys.stdout, end="\n"):
     last_ack = True
     # raw meshcli command as on command line
-    if line.startswith("$") :
+    if line.startswith("$$") :
         try :
-            args = shlex.split(line[1:])
+            args = shlex.split(line[2:], posix=True)
             await process_cmds(mc, args, json_output=json_output, sink=sink)
         except ValueError:
             logger.error("Error parsing line {line[1:]}")
 
-    elif line.startswith("/scope") or\
+        return contact, scope, True
+
+    line = await resolve_cli_string(mc, line, contact, scope, json_output=json_output, end=end)
+    if len(line)>0 and line[-1] == "\n":
+        line = line[:-1]
+
+    if line.startswith("/scope") or\
             line.startswith("scope") and contact is None:
         if not scope is None:
             prev_scope = scope
@@ -1054,14 +1146,14 @@ async def process_line(mc, line, contact, prev_contact, scope, prev_scope, json_
     elif contact is None and (line.startswith("apply_to ") or line.startswith("at ")) or\
          line.startswith("/apply_to ") or line.startswith("/at ") :
         try:
-            await apply_command_to_contacts(mc, line.split(" ",2)[1], line.split(" ",2)[2], json_output=json_output, sink=sink)
+            await apply_command_to_contacts(mc, line.split(" ",2)[1], line.split(" ",2)[2], json_output=json_output, sink=sink, end=end)
         except IndexError:
             logger.error(f"Error with apply_to command parameters")
 
     elif line.startswith("to ") or line.startswith("/to "): # dest
         dest = line.split(" ", 1)[1]
         if dest.startswith("\"") or dest.startswith("\'") : # if name starts with a quote
-            dest = shlex.split(dest)[0] # use shlex.split to get contact name between quotes
+            dest = shlex.split(dest, posix=True)[0] # use shlex.split to get contact name between quotes
         dest_scope = None
         if '%' in dest and scope!=None :
             dest_scope = dest.split("%")[-1]
@@ -1113,7 +1205,7 @@ async def process_line(mc, line, contact, prev_contact, scope, prev_scope, json_
         sink.write("\n")
 
     elif line.startswith("/") :
-        last_ack = await process_slash_cmd(mc, line, json_output=json_output, sink=sink)
+        last_ack = await process_slash_cmd(mc, line, json_output=json_output, sink=sink, end=end)
 
     # commands that take one parameter (don't need quotes)
     elif line.startswith("public ") :
@@ -1136,13 +1228,13 @@ async def process_line(mc, line, contact, prev_contact, scope, prev_scope, json_
     # commands are passed through if at root
     elif contact is None or line.startswith(".") :
         try:
-            args = shlex.split(line)
-            await process_cmds(mc, args, json_output=json_output, sink=sink)
+            args = shlex.split(line, posix=True)
+            await process_cmds(mc, args, json_output=json_output, sink=sink,end=end)
         except ValueError:
             logger.error(f"Error processing {line}")
 
     else:
-        if await process_contact_chat_line(mc, contact, line, json_output=json_output,sink=sink):
+        if await process_contact_chat_line(mc, contact, line, json_output=json_output,sink=sink,end=end):
             pass
 
         elif line == "list" : # list command from chat displays contacts on a line
@@ -1171,12 +1263,12 @@ async def process_line(mc, line, contact, prev_contact, scope, prev_scope, json_
         elif contact["type"] == 2 or\
              contact["type"] == 3 or\
              contact["type"] == 4 : # repeater, room, sensor send cmd
-            await process_cmds(mc, ["cmd", contact["adv_name"], line], json_output=json_output, sink=sink)
+            await process_cmds(mc, ["cmd", contact["adv_name"], line], json_output=json_output, sink=sink, end=end)
 
     sink.flush()
     return (contact, scope, last_ack)
 
-async def process_slash_cmd(mc, line, json_output=False, sink=sys.stdout):
+async def process_slash_cmd(mc, line, json_output=False, sink=sys.stdout, end="\n"):
     path = line.split(" ", 1)[0]
     if path.count("/") == 1:
         args = line[1:].split(" ")
@@ -1198,7 +1290,7 @@ async def process_slash_cmd(mc, line, json_output=False, sink=sys.stdout):
                 await send_chan_msg(mc, ch["channel_idx"], line.split(" ", 1)[1])
             else :
                 try :
-                    await process_cmds(mc, shlex.split(line[1:]), json_output=json_output, sink=sink)
+                    await process_cmds(mc, shlex.split(line[1:], posix=True), json_output=json_output, sink=sink)
                 except ValueError:
                     logger.error(f"Error processing line{line[1:]}")
     else:
@@ -1228,7 +1320,7 @@ async def process_slash_cmd(mc, line, json_output=False, sink=sys.stdout):
 async def process_contact_chat_line(mc, contact, line, inside=False, json_output=False, sink=sys.stdout, end="\n"):
     # tries several command path for a contact
     # if a path is successfull, return True
-    if contact["type"] == 0:
+    if contact is None or contact["type"] == 0:
         return False
 
     async def process_second(first_str):
@@ -1410,7 +1502,7 @@ async def process_contact_chat_line(mc, contact, line, inside=False, json_output
     if contact["type"] > 1 and\
         (line.startswith("setperm ") or line.startswith("set perm ")):
         try:
-            cmds = shlex.split(line)
+            cmds = shlex.split(line, posix=True)
             off = 1 if line.startswith("set perm") else 0
             name = cmds[1 + off]
             perm_string = cmds[2 + off]
@@ -3724,6 +3816,10 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                     stdout=subprocess.PIPE, text=True)
                 sink.write(result.stdout)
 
+            case "echo" : # prints arg to output, for debug purposes mainly
+                argnum = 1
+                sink.write(cmds[1] + end)
+
             case "script" :
                 if len(cmds) > 1:
                     argnum = 1
@@ -3748,9 +3844,20 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
         return (None, "")
 
 async def process_cmds (mc, args, json_output=False, sink=sys.stdout, end="\n") :
-    cmds = args
     output_str = ""
-    while cmds and len(cmds) > 0 and cmds[0][0] != '#' :
+    # first replace every command execution
+    # beware, this path is only taken on scripts and cmdline, interactive mode uses
+    # another path (but you can force this one using $$
+    # substitutions will work differently (because it occurs before tokenizer)
+    # there is no easy way to get a consistent behaviour
+    cmds = []
+    for arg in args:
+        cmd = await resolve_cli_string(mc, arg, json_output=json_output, end=end)
+        if len(cmd)>0 and cmd[-1]=="\n":
+            cmd = cmd[:-1]
+        cmds.append(cmd)
+
+    while cmds and len(cmds) > 0 :
         (cmds, cur_output) = await next_cmd(mc, cmds, json_output, sink=sink, end=end)
         if not cur_output is None:
             sink.write(cur_output)
@@ -3774,7 +3881,7 @@ async def process_script(mc, file, json_output=False, sink=sys.stdout):
         if not (line == "" or line[0] == "#"):
             logger.debug(f"processing {line}")
             try :
-                cmds = shlex.split(line)
+                cmds = shlex.split(line, posix=True)
                 await process_cmds(mc, cmds, json_output, sink=sink)
             except ValueError:
                 logger.error(f"Error processing {line}")
@@ -4792,7 +4899,6 @@ async def main(argv):
             except ConnectionError :
                 logger.error("Can't connect to node, exiting")
                 return
-
 
         # Store device address in configuration
         if os.path.isdir(MCCLI_CONFIG_DIR) :
