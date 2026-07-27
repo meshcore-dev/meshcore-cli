@@ -33,7 +33,7 @@ except ImportError:
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.5.7"
+VERSION = "v1.6.0"
 
 # default ble address is stored in a config file
 HOME_DIR = str(Path.home())
@@ -804,7 +804,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
 
     contact = to
     prev_contact = None
-    scope = await set_scope(mc, "*")
+    scope = await set_scope(mc, "") #reset scope
     prev_scope = scope
     sink = sys.stdout
 
@@ -861,7 +861,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
             prompt = prompt + f"{ANSI_BGRAY}"
             prompt = prompt + f"{mc.self_info['name']}"
             if contact is None: # display scope
-                if not scope is None:
+                if not scope is None and scope != "" :
                     prompt = prompt + f"|{scope}"
 
             if contact is None :
@@ -898,9 +898,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
 
                 prompt = prompt + f"{contact['adv_name']}"
                 if contact["type"] == 0 or contact["out_path_len"]==-1:
-                    if scope is None:
-                        prompt = prompt + f"|*"
-                    else:
+                    if not scope is None and scope != "" :
                         prompt = prompt + f"|{scope}"
                 else: # display path to dest or 0 if 0 hop
                     if contact["out_path_len"] == 0:
@@ -1811,8 +1809,8 @@ async def set_scope (mc, scope) :
     if not set_scope.has_scope:
         return None
 
-    if scope == "None" or scope == "0" or scope == "clear" or scope == "":
-        scope = "*"
+    if scope == "None" or scope == "0" or scope == "clear" or scope == "" :
+        scope = ""
 
     if set_scope.current_scope == scope:
         return scope
@@ -4104,11 +4102,15 @@ def get_help_for (cmdname, context="line") :
 
 Managing Flood Scope in interactive mode
     Flood scope has recently been introduced in meshcore (from v1.10.0). It limits the scope of packets to regions, using transport codes in the frame.
-    When entering chat mode, scope will be reset to *, meaning classic flood.
+    When entering chat mode, scope will be at default_scope.
     You can switch scope using the scope command, or postfixing the to command with %<scope>.
     Scope can also be applied to a command using % before the scope name. For instance login%#Morbihan will limit diffusion of the login command (which is usually sent flood to get the path to a repeater) to the #Morbihan region.
 
-    default_scope for the device can be set/get by using set default_scope and get default_scope, if set, the scope will revert to this default.
+    Default_scope for the device can be set/get by using set default_scope and get default_scope, if set, the scope will revert to this default.
+
+    When default_scope is active, there is no scope showed on the prompt/
+
+    Setting scope to "0" goes back to default scope. Setting scope to "*" forces messages to be sent unscoped.
 """)
 
     elif cmdname == "contact_info":
