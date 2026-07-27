@@ -22,7 +22,7 @@
 
           src = python3Packages.fetchPypi {
             inherit pname version;
-            sha256 = "sha256-JnEH4JqW99DWP0vbFALQM6ckuq3Zyb7Pm3GkWBcPYLs=";
+            sha256 = "sha256-ItV9u1kYavbtIwP9FJY1AimJpPjchnxymm8KvDStOqs=";
           };
 
           build-system = [ python3Packages.hatchling ];
