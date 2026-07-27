@@ -426,7 +426,8 @@ class MyNestedCompleter(NestedCompleter):
             yield from super().get_completions(document, complete_event)
 
 
-def make_completion_dict(contacts, pending={}, to=None, channels=None):
+def make_completion_dict(contacts, pending=None, to=None, channels=None):
+    pending = pending or {}
     contact_list = {}
     pending_list = {}
     to_list = {}
@@ -1038,36 +1039,27 @@ def split_next_command(input_string):
     cleaned_before = []
 
     while i < len(input_string):
-        # 1. Handle escape characters in the 'before' segment
         if input_string[i] == '\\':
             if i + 1 < len(input_string):
-                # Append the escaped character directly to bypass token checks
                 cleaned_before.append(input_string[i + 1])
                 i += 2
             else:
-                # Handle trailing backslash safely
                 cleaned_before.append('\\')
                 i += 1
-            continue  # Move immediately to the next iteration
+            continue
 
-        # 2. Detect an unescaped command start
         if input_string[i:i+2] == "$(":
             paren_balance = 1
             k = i + 2
 
             while k < len(input_string):
-                # Skip any escaped characters inside $(cmd) to protect \( and \)
                 if input_string[k] == '\\':
                     k += 2
                     continue
-
-                # Track nested unescaped subcommands
                 if input_string[k:k+2] == "$(":
                     paren_balance += 1
                     k += 2
                     continue
-
-                # Track closing parentheses
                 if input_string[k] == ")":
                     paren_balance -= 1
                     if paren_balance == 0:
@@ -1075,10 +1067,11 @@ def split_next_command(input_string):
                         return before, input_string[i+2:k], input_string[k+1:]
                     k += 1
                     continue
-
                 k += 1
 
-        # 3. Normal character in the 'before' segment
+            raise ValueError(
+                f"Unclosed '$(' at position {i}: \"{input_string[i:]}\"")
+
         cleaned_before.append(input_string[i])
         i += 1
 
@@ -1104,14 +1097,13 @@ async def resolve_cli_string(mc, arg_string, contact=None, scope="*", json_outpu
         with io.StringIO() as strm:
             await process_line(mc, resolved_sub, contact, scope, json_output=json_output, sink=strm, end=end)
             cmd_buffer += strm.getvalue()
+            cmd_buffer.rstrip("\r\n")
 
         before, command, after = split_next_command(after)
         cmd_buffer += before
 
     cmd_buffer += after
 
-    # remove new lines
-    cmd_buffer = cmd_buffer.replace("\n", "").replace("\r", "")
     return cmd_buffer
 
 async def process_line(mc, line, contact=None, scope="*", prev_contact=None, prev_scope="*", json_output=False, sink=sys.stdout, end="\n"):
@@ -1122,11 +1114,17 @@ async def process_line(mc, line, contact=None, scope="*", prev_contact=None, pre
             args = shlex.split(line[2:], posix=True)
             await process_cmds(mc, args, json_output=json_output, sink=sink)
         except ValueError:
-            logger.error("Error parsing line {line[1:]}")
+            logger.error(f"Error parsing line {line[1:]}")
 
         return contact, scope, True
 
-    line = await resolve_cli_string(mc, line, contact, scope, json_output=json_output, end=end)
+    try:
+        line = await resolve_cli_string(mc, line, contact, scope, json_output=json_output, end=end)
+    except ValueError as e:
+        logger.error(f"Command substitution error: {e}")
+        sink.write(f"Error: {e}\n")
+        return contact, scope, True
+
     if len(line)>0 and line[-1] == "\n":
         line = line[:-1]
 
@@ -3850,10 +3848,13 @@ async def process_cmds (mc, args, json_output=False, sink=sys.stdout, end="\n") 
     # there is no easy way to get a consistent behaviour
     cmds = []
     for arg in args:
-        cmd = await resolve_cli_string(mc, arg, json_output=json_output, end=end)
-        if len(cmd)>0 and cmd[-1]=="\n":
-            cmd = cmd[:-1]
-        cmds.append(cmd)
+        try:
+            cmd = await resolve_cli_string(mc, arg, json_output=json_output, end=end)
+        except ValueError as e:
+            logger.error(f"Command substitution error: {e}")
+            sink.write(f"Error: {e}\n")
+            return
+        cmds.append(cmd.rstrip("\r\n"))
 
     while cmds and len(cmds) > 0 :
         (cmds, cur_output) = await next_cmd(mc, cmds, json_output, sink=sink, end=end)
