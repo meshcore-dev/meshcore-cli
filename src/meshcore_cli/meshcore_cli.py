@@ -1096,8 +1096,7 @@ async def resolve_cli_string(mc, arg_string, contact=None, scope="*", json_outpu
 
         with io.StringIO() as strm:
             await process_line(mc, resolved_sub, contact, scope, json_output=json_output, sink=strm, end=end)
-            cmd_buffer += strm.getvalue()
-            cmd_buffer.rstrip("\r\n")
+            cmd_buffer += strm.getvalue().rstrip("\r\n")
 
         before, command, after = split_next_command(after)
         cmd_buffer += before
@@ -1201,7 +1200,7 @@ async def process_line(mc, line, contact=None, scope="*", prev_contact=None, pre
         sink.write("\n")
 
     elif line.startswith("/") :
-        last_ack = await process_slash_cmd(mc, line, json_output=json_output, sink=sink, end=end)
+        last_ack = await process_slash_cmd(mc, line, scope, json_output=json_output, sink=sink, end=end)
 
     # commands that take one parameter (don't need quotes)
     elif line.startswith("public ") :
@@ -1264,7 +1263,7 @@ async def process_line(mc, line, contact=None, scope="*", prev_contact=None, pre
     sink.flush()
     return (contact, scope, last_ack)
 
-async def process_slash_cmd(mc, line, json_output=False, sink=sys.stdout, end="\n"):
+async def process_slash_cmd(mc, line, scope, json_output=False, sink=sys.stdout, end="\n"):
     path = line.split(" ", 1)[0]
     if path.count("/") == 1:
         args = line[1:].split(" ")
@@ -1306,11 +1305,14 @@ async def process_slash_cmd(mc, line, json_output=False, sink=sys.stdout, end="\
             else:
                 if cmdline != "":
                     if tct["type"] == 1:
-                        return await msg_ack(mc, tct, cmdline)
+                        ret = await msg_ack(mc, tct, cmdline)
+                        set_scope(scope)
+                        return ret
                     else :
                         await process_cmds(mc, ["cmd", tct["adv_name"], cmdline], json_output=json_output, sink=sink)
+                        set_scope(scope)
                         return True
-
+    set_scope(scope)
     return True
 
 async def process_contact_chat_line(mc, contact, line, inside=False, json_output=False, sink=sys.stdout, end="\n"):
@@ -1691,6 +1693,7 @@ async def apply_command_to_contacts(mc, contact_filter, line, json_output=False,
             count = count + 1
 
             with io.StringIO() as strm:
+
                 if await process_contact_chat_line(mc, contact, line, json_output=json_output, sink=strm, end=""):
                     pass
 
