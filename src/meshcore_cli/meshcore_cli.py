@@ -1306,13 +1306,13 @@ async def process_slash_cmd(mc, line, scope, json_output=False, sink=sys.stdout,
                 if cmdline != "":
                     if tct["type"] == 1:
                         ret = await msg_ack(mc, tct, cmdline)
-                        set_scope(scope)
+                        await set_scope(mc, scope)
                         return ret
                     else :
                         await process_cmds(mc, ["cmd", tct["adv_name"], cmdline], json_output=json_output, sink=sink)
-                        set_scope(scope)
+                        await set_scope(mc, scope)
                         return True
-    set_scope(scope)
+    await set_scope(mc, scope)
     return True
 
 async def process_contact_chat_line(mc, contact, line, inside=False, json_output=False, sink=sys.stdout, end="\n"):
