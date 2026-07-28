@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import math
 import sys
 import subprocess
@@ -7,13 +8,20 @@ import os
 import tempfile
 from io import BytesIO
 import requests
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 MAP_SERVERS = {
     "opentopo": "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
     "carto": "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+    "carto_dark": "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
     "osm" : "https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png",
-    "google_sat": "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+    "wikimedia": "https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png",
+    "google_sat": "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+    "google_hybrid": "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+    "google_roads": "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+    "esri_satellite": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    "ign_plan": "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&FORMAT=image/png&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}",
+    "ign_ortho": "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=HR.ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}",
 }
 
 SUBDOMAINS=['a', 'b', 'c']
@@ -72,7 +80,43 @@ def get_tile_image(provider_name, s, z, x, y, server_url, write_cache=False, ver
 
     return None
 
-def generate_map_by_size(lat, lon, zoom, width_px, height_px, provider_name, server_url, add_marker=False, write_cache=False, verbose=False):
+def load_caption_font(size=12):
+    for font_name in ("DejaVuSans.ttf", "Arial.ttf"):
+        try:
+            return ImageFont.truetype(font_name, size)
+        except Exception:
+            continue
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        # Older Pillow versions don't support the size kwarg
+        return ImageFont.load_default()
+
+
+def draw_poi_marker(draw, x, y, caption=None, font=None, color=(30, 100, 240)):
+    """Draw a blue marker (matching the style of the center marker) with an
+    optional caption written below it."""
+    radius = 4
+    draw.rectangle(
+        [x - radius, y - radius, x + radius, y + radius],
+        outline=color, width=2
+    )
+
+    if caption:
+        text_y = y + radius + 3
+        bbox = draw.textbbox((0, 0), caption, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_x = x - (text_w / 2)
+
+        # Draw a light halo behind the text so it stays legible over the map.
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx or dy:
+                    draw.text((text_x + dx, text_y + dy), caption, font=font, fill=(255, 255, 255))
+        draw.text((text_x, text_y), caption, font=font, fill=color)
+
+
+def generate_map_by_size(lat, lon, zoom, width_px, height_px, provider_name, server_url, add_marker=False, write_cache=False, verbose=False, markers=None):
     tile_size = 256
     center_tile_x, center_tile_y = lat_lon_to_tile_fractional(lat, lon, zoom)
 
@@ -118,6 +162,34 @@ def generate_map_by_size(lat, lon, zoom, width_px, height_px, provider_name, ser
         inner_radius = 3  # 3px internal void
         draw.rectangle([cx - inner_radius, cy - inner_radius, cx + inner_radius, cy + inner_radius], outline=(255, 0, 0), width=2)
 
+    if markers:
+        draw = ImageDraw.Draw(final_image)
+        font = load_caption_font()
+        for node in markers:
+            try:
+                m_lat = node["lat"]
+                m_lon = node["lon"]
+                caption = node.get("caption", "")
+            except (KeyError, TypeError):
+                if verbose:
+                    print(f"[Markers] Skipping malformed entry: {node}", file=sys.stderr)
+                continue
+
+            m_tile_x, m_tile_y = lat_lon_to_tile_fractional(m_lat, m_lon, zoom)
+            m_pixel_x = m_tile_x * tile_size
+            m_pixel_y = m_tile_y * tile_size
+
+            local_x = m_pixel_x - start_pixel_x
+            local_y = m_pixel_y - start_pixel_y
+
+            if 0 <= local_x <= width_px and 0 <= local_y <= height_px:
+                if verbose:
+                    print(f"[Markers] Placing '{caption}' at {m_lat},{m_lon}", file=sys.stderr)
+                draw_poi_marker(draw, local_x, local_y, caption=caption, font=font)
+            else:
+                if verbose:
+                    print(f"[Markers] '{caption}' at {m_lat},{m_lon} is outside the map, skipping", file=sys.stderr)
+
     return final_image
 
 def display_sixel_via_system(image, zoom=1):
@@ -127,9 +199,9 @@ def display_sixel_via_system(image, zoom=1):
                          Image.Resampling.LANCZOS)
     image.save(png_buffer, format="PNG")
     try:
-        result = subprocess.run(['img2sixel'], 
+        result = subprocess.run(['img2sixel'],
                        input=png_buffer.getvalue(),
-                       capture_output=False, 
+                       capture_output=False,
                        check=False)
     except FileNotFoundError:
         print("\n[Error] 'img2sixel' missing.", file=sys.stderr)
@@ -139,17 +211,35 @@ def main():
     parser = argparse.ArgumentParser(description="Map image generator.")
     parser.add_argument("-y", "--lat", type=float, default=47.74792, help="latitude in °")
     parser.add_argument("-x", "--lon", type=float, default=-3.396558, help="longitude in °")
-    parser.add_argument("-z", "--zoom", type=int, default=12, help="zoom")
+    parser.add_argument("-z", "--zoom", type=int, default=12, help="zoom at which tiles are downloaded")
     parser.add_argument("-W", "--width", type=int, default=600, help="width in pixels")
     parser.add_argument("-H", "--height", type=int, default=400, help="height in pixels")
-    parser.add_argument("-o", "--output", type=str, default=None, help="output to a given file (defaults generate sixel)")
+    parser.add_argument("-o", "--output", type=str, default=None, help="output to a given file")
+    parser.add_argument("-s", "--sixel", action="store_true", help="display in terminal via sixel")
     parser.add_argument("-m", "--marker", action="store_true", help="display marker for position")
     parser.add_argument("-v", "--verbose", action="store_true", help="verbose output")
     parser.add_argument("-p", "--provider", type=str, choices=list(MAP_SERVERS.keys()), default="opentopo")
     parser.add_argument("-u", "--custom-url", type=str, default=None)
     parser.add_argument("-f", "--zoom-factor", type=float, default=1.0, help="zoom to apply before displaying in terminal")
+    parser.add_argument("-J", "--markers-stdin", action="store_true", help="read a JSON array of {lat, lon, caption} from stdin and plot them")
 
     args = parser.parse_args()
+
+    if not args.output and not args.sixel:
+        parser.print_help(sys.stderr)
+        sys.exit(1)
+
+    markers = None
+    if args.markers_stdin:
+        try:
+            raw = sys.stdin.read()
+            markers = json.loads(raw)
+            if not isinstance(markers, list):
+                print("[Error] JSON input must be an array of {lat, lon, caption} objects.", file=sys.stderr)
+                sys.exit(1)
+        except json.JSONDecodeError as e:
+            print(f"[Error] Invalid JSON on stdin: {e}", file=sys.stderr)
+            sys.exit(1)
 
     os.makedirs(CACHE_DIR, exist_ok=True)
     if args.verbose:
@@ -161,15 +251,16 @@ def main():
     img = generate_map_by_size(
         lat=args.lat, lon=args.lon, zoom=args.zoom, width_px=args.width, height_px=args.height,
         provider_name=provider_id, server_url=selected_url, add_marker=args.marker,
-        write_cache=True, verbose=args.verbose
+        write_cache=True, verbose=args.verbose, markers=markers
     )
 
-    if not args.output: # when no output filename is provided, output sixel
-        display_sixel_via_system(img, args.zoom_factor)
-    else:
+    if args.output:
         img.save(args.output, "PNG")
         if args.verbose:
             print(f"[System] Saved : {args.output}")
+
+    if args.sixel:
+        display_sixel_via_system(img, args.zoom_factor)
 
 if __name__ == "__main__":
     main()
