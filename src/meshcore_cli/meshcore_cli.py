@@ -2793,11 +2793,20 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
             case "get_channels"|"gc":
                 res = await get_channels(mc)
                 if json_output:
-                    output_str += json.dumps(res)+"\n"
-                else:
-                    for c in mc.channels:
-                        if c["channel_name"] != "":
-                            output_str += f"{c['channel_idx']}: {c['channel_name']} [{c['channel_secret']}]\n"
+                    output_str += "["
+                    first = True
+                for c in mc.channels:
+                    if c["channel_name"] != "":
+                        if json_output:
+                            if first:
+                                first = False
+                            else:
+                                output_str += ",\n"
+                            output_str += json.dumps(c)
+                        else:
+                            output_str += f"{c['channel_idx']}: {c['channel_name']} [{c['channel_secret']}]{end}"
+                if json_output:
+                    output_str += "]" + end
 
             case "set_channel":
                 argnum = 3
