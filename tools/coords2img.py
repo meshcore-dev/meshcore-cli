@@ -120,8 +120,11 @@ def generate_map_by_size(lat, lon, zoom, width_px, height_px, provider_name, ser
 
     return final_image
 
-def display_sixel_via_system(image):
+def display_sixel_via_system(image, zoom=1):
     png_buffer = BytesIO()
+    if zoom != 1.0:
+        image = image.resize((int(image.size[0]*zoom), int(image.size[1]*zoom)),
+                         Image.Resampling.LANCZOS)
     image.save(png_buffer, format="PNG")
     try:
         result = subprocess.run(['img2sixel'], 
@@ -144,6 +147,7 @@ def main():
     parser.add_argument("-v", "--verbose", action="store_true", help="verbose output")
     parser.add_argument("-p", "--provider", type=str, choices=list(MAP_SERVERS.keys()), default="opentopo")
     parser.add_argument("-u", "--custom-url", type=str, default=None)
+    parser.add_argument("-f", "--zoom-factor", type=float, default=1.0, help="zoom to apply before displaying in terminal")
 
     args = parser.parse_args()
 
@@ -161,7 +165,7 @@ def main():
     )
 
     if not args.output: # when no output filename is provided, output sixel
-        display_sixel_via_system(img)
+        display_sixel_via_system(img, args.zoom_factor)
     else:
         img.save(args.output, "PNG")
         if args.verbose:
