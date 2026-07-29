@@ -93,6 +93,9 @@ SLASH_END = f"{ANSI_RESET_BACK}"
 SLASH_START = f"{ANSI_GRAY_BACK}"
 INVERT_SLASH = False
 
+# Aliases are stored in a global dict
+ALIASES={}
+
 def split_first_token(line):
     lexer = shlex.shlex(line, posix=True)
     lexer.whitespace_split = True
@@ -3838,6 +3841,16 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 if not file_name is None:
                     output_str += await process_script(mc, file_name, json_output=json_output, sink=sink)
 
+            case "alias_get"|"aget" :
+                argnum = 1
+                if (cmds[1] in ALIASES):
+                    alias = ALIASES[cmds[1]]
+                    resolved  = await resolve_cli_string(mc, alias, json_output=json_output, end=end)
+                    output_str += resolved
+
+            case "alias_set"|"aset" :
+                argnum = 2
+                ALIASES[cmds[1]] = cmds[2]
             case _ :
                 logger.error(f"Unknown command : {cmd}, {cmds} not executed ...")
                 return (None, output_str)
@@ -3862,12 +3875,13 @@ async def process_cmds (mc, args, json_output=False, sink=sys.stdout, end="\n") 
     cmds = []
     for arg in args:
         try:
-            cmd = await resolve_cli_string(mc, arg, json_output=json_output, end=end)
+            arg = await resolve_cli_string(mc, arg, json_output=json_output, end=end)
         except ValueError as e:
             logger.error(f"Command substitution error: {e}")
             sink.write(f"Error: {e}\n")
             return
-        cmds.append(cmd.rstrip("\r\n"))
+        arg = arg.rstrip("\r\n")
+        cmds.append(arg)
 
     while cmds and len(cmds) > 0 :
         (cmds, cur_output) = await next_cmd(mc, cmds, json_output, sink=sink, end=end)
@@ -4968,7 +4982,7 @@ async def main(argv):
         logger.debug(f"No device init script for {mc.self_info['name']}")
 
     if len(args) > 0 :
-        await process_cmds(mc, args, json_output, sink=sys.stdout)
+        await process_cmds(mc, args, json_output=json_output, sink=sys.stdout)
 
     if len(args) == 0 or force_interactive :
         await interactive_loop(mc, json_output=json_output)
