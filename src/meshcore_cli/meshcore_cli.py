@@ -1115,7 +1115,7 @@ async def process_line(mc, line, contact=None, scope="*", prev_contact=None, pre
     if line.startswith("$$") :
         try :
             args = shlex.split(line[2:], posix=True)
-            await process_cmds(mc, args, json_output=json_output, sink=sink)
+            await process_cmds(mc, args, resolve=True, json_output=json_output, sink=sink)
         except ValueError:
             logger.error(f"Error parsing line {line[1:]}")
 
@@ -3865,22 +3865,20 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
         logger.error("Cancelled")
         return (None, "")
 
-async def process_cmds (mc, args, json_output=False, sink=sys.stdout, end="\n") :
+async def process_cmds (mc, args, json_output=False, resolve=False, sink=sys.stdout, end="\n") :
     output_str = ""
-    # first replace every command execution
-    # beware, this path is only taken on scripts and cmdline, interactive mode uses
-    # another path (but you can force this one using $$
-    # substitutions will work differently (because it occurs before tokenizer)
-    # there is no easy way to get a consistent behaviour
     cmds = []
     for arg in args:
-        try:
-            arg = await resolve_cli_string(mc, arg, json_output=json_output, end=end)
-        except ValueError as e:
-            logger.error(f"Command substitution error: {e}")
-            sink.write(f"Error: {e}\n")
-            return
-        arg = arg.rstrip("\r\n")
+        # only resolve strings if they come from shell/script or $$ in interactive mode
+        # prevents double resolution (follow this cause maybe it'll induce other issues)
+        if resolve:
+            try:
+                arg = await resolve_cli_string(mc, arg, json_output=json_output, end=end)
+            except ValueError as e:
+                logger.error(f"Command substitution error: {e}")
+                sink.write(f"Error: {e}\n")
+                return
+            arg = arg.rstrip("\r\n")
         cmds.append(arg)
 
     while cmds and len(cmds) > 0 :
@@ -3908,7 +3906,7 @@ async def process_script(mc, file, json_output=False, sink=sys.stdout):
             logger.debug(f"processing {line}")
             try :
                 cmds = shlex.split(line, posix=True)
-                await process_cmds(mc, cmds, json_output, sink=sink)
+                await process_cmds(mc, cmds, resolve=True, json_output=json_output, sink=sink)
             except ValueError:
                 logger.error(f"Error processing {line}")
     return output_str
@@ -4982,7 +4980,7 @@ async def main(argv):
         logger.debug(f"No device init script for {mc.self_info['name']}")
 
     if len(args) > 0 :
-        await process_cmds(mc, args, json_output=json_output, sink=sys.stdout)
+        await process_cmds(mc, args, resolve=True, json_output=json_output, sink=sys.stdout)
 
     if len(args) == 0 or force_interactive :
         await interactive_loop(mc, json_output=json_output)
