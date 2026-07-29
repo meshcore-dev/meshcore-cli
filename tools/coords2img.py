@@ -186,10 +186,24 @@ def draw_styled_line(draw, points, color=(0, 0, 0), width=2, style="plain"):
             dist = next_dist
             draw_on = not draw_on
 
-def draw_poi_marker(draw, x, y, caption=None, font=None, color=(30, 100, 240), shape="square", font_color=None):
+ARROW_MODES = ("begin", "end", "both")
+
+def draw_arrowhead(draw, tip, direction, color, size=10):
+    """Draw a filled triangular arrowhead at `tip`, pointing along `direction`
+    (dx, dy — doesn't need to be normalized)."""
+    dx, dy = direction
+    if dx == 0 and dy == 0:
+        return
+    angle = math.atan2(dy, dx)
+    spread = math.radians(25)
+    left = (tip[0] - size * math.cos(angle - spread), tip[1] - size * math.sin(angle - spread))
+    right = (tip[0] - size * math.cos(angle + spread), tip[1] - size * math.sin(angle + spread))
+    draw.polygon([tip, left, right], fill=color)
+
+def draw_poi_marker(draw, x, y, caption=None, font=None, color=(30, 100, 240), shape="square", font_color=None, width=2):
     """Draw a marker (matching the style of the center marker) with an
     optional caption written below it."""
-    draw_marker_shape(draw, x, y, shape=shape, color=color, radius=4, width=2)
+    draw_marker_shape(draw, x, y, shape=shape, color=color, radius=4, width=width)
 
     if caption:
         if font_color is None:
@@ -306,6 +320,7 @@ def generate_map_by_size(lat, lon, zoom, width_px, height_px, provider_name, ser
             a_width = art.get("width") or 2
             a_style = art.get("type") or "plain"
             a_curve = (art.get("curve") or "straight").lower()
+            a_arrow = (art.get("arrow") or "").lower()
 
             if a_curve == "bezier":
                 pixel_points = smooth_path(pixel_points)
@@ -314,6 +329,16 @@ def generate_map_by_size(lat, lon, zoom, width_px, height_px, provider_name, ser
                 print(f"[Lines] Drawing {a_curve} {a_style} {'line' if len(raw_points) == 2 else 'path'} "
                       f"({len(raw_points)} points)", file=sys.stderr)
             draw_styled_line(draw, pixel_points, color=a_color, width=a_width, style=a_style)
+
+            arrow_size = max(10, a_width * 3)
+            if a_arrow in ("end", "both"):
+                tip = pixel_points[-1]
+                prev = pixel_points[-2]
+                draw_arrowhead(draw, tip, (tip[0] - prev[0], tip[1] - prev[1]), a_color, size=arrow_size)
+            if a_arrow in ("begin", "both"):
+                tip = pixel_points[0]
+                nxt = pixel_points[1]
+                draw_arrowhead(draw, tip, (tip[0] - nxt[0], tip[1] - nxt[1]), a_color, size=arrow_size)
 
     if markers:
         draw = ImageDraw.Draw(final_image)
@@ -337,6 +362,7 @@ def generate_map_by_size(lat, lon, zoom, width_px, height_px, provider_name, ser
             m_shape = node.get("shape") or "square"
             m_font_color = parse_color(node.get("font_color"), m_color)
             m_font_size = node.get("font_size") or 12
+            m_width = node.get("width") or 2
             font = font_cache.setdefault(m_font_size, load_caption_font(m_font_size))
 
             m_tile_x, m_tile_y = lat_lon_to_tile_fractional(m_lat, m_lon, zoom)
@@ -350,7 +376,7 @@ def generate_map_by_size(lat, lon, zoom, width_px, height_px, provider_name, ser
                 if verbose:
                     print(f"[Markers] Placing '{caption}' at {m_lat},{m_lon}", file=sys.stderr)
                 draw_poi_marker(draw, local_x, local_y, caption=caption, font=font,
-                                 color=m_color, shape=m_shape, font_color=m_font_color)
+                                 color=m_color, shape=m_shape, font_color=m_font_color, width=m_width)
             else:
                 if verbose:
                     print(f"[Markers] '{caption}' at {m_lat},{m_lon} is outside the map, skipping", file=sys.stderr)
@@ -412,6 +438,7 @@ MARKERS (each item in "markers"):
    color         marker color: name, "#rrggbb", "rgb(r,g,b)", or [r,g,b]
                  (default: blue)
    shape         "square", "circle", "cross", or "diamond" (default: square)
+   width         outline stroke width in px (default: 2)
    font_color    caption color (default: same as color)
    font_size     caption font size in px (default: 12)
 
@@ -429,6 +456,8 @@ across several points.
    type     "plain", "dotted", or "dash" (default: plain)
    curve    "straight" or "bezier" -- bezier smooths a multi-point path
             through all points via a Catmull-Rom spline (default: straight)
+   arrow    "begin", "end", or "both" -- draws an arrowhead at the start
+            and/or end of the line/path (default: none)
 
 EXAMPLE combining everything:
 
