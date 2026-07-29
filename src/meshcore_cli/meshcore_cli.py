@@ -988,7 +988,8 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                 line = line[1:].strip()
                 try:
                     pcom, mcline = split_first_token(line)
-                    with subprocess.Popen(shlex.split(pcom, posix=True), stdin=subprocess.PIPE, text=True) as process:
+                    pcom = await resolve_cli_string(mc, pcom)
+                    with subprocess.Popen(pcom, shell=True, stdin=subprocess.PIPE, text=True) as process:
                         (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=jo, sink=process.stdin)
                 except ValueError:
                     logger.error("Couldn't parse name")
