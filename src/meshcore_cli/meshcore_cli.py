@@ -943,6 +943,9 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                                               key_bindings=bindings)
 
             line = line.strip()
+            # should replace &cmd by "$(alias_get cmd)"
+            line = re.sub(r"(?<!\\)&(\w+)", r'"$(alias_get \1)"', line)
+            line = line.replace(r"\&", "&")
 
             if line == "" : # blank line
                 continue
@@ -3851,6 +3854,10 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
             case "alias_set"|"aset" :
                 argnum = 2
                 ALIASES[cmds[1]] = cmds[2]
+
+            case "aliases":
+                output_str += json.dumps(ALIASES, indent=4)+end
+
             case _ :
                 logger.error(f"Unknown command : {cmd}, {cmds} not executed ...")
                 return (None, output_str)
