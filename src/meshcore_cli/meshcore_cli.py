@@ -826,7 +826,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
 
         # beware, mouse support breaks mouse scroll ...
         session = PromptSession(history=our_history,
-                                wrap_lines=False,
+                                wrap_lines=True,
                                 mouse_support=False,
                                 complete_style=CompleteStyle.MULTI_COLUMN)
 
