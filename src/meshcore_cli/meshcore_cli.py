@@ -965,7 +965,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                     fp, mcline = split_first_token(line)
                     fp = fp.replace("~", HOME_DIR)
                     with open(fp, "a") as file:
-                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=jo, sink=file)
+                        (new_contact, new_scope, last_ack) = await process_pipeline(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=jo, sink=file)
                 except ValueError:
                     logger.error("Couldn't parse filename")
                     continue
@@ -979,7 +979,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                     fp, mcline = split_first_token(line)
                     fp = fp.replace("~", HOME_DIR)
                     with open(fp, "w") as file:
-                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=jo, sink=file)
+                        (new_contact, new_scope, last_ack) = await process_pipeline(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=jo, sink=file)
                 except ValueError:
                     logger.error("Couldn't parse filename")
                     continue
@@ -991,9 +991,8 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                 line = line[1:].strip()
                 try:
                     pcom, mcline = split_first_token(line)
-                    pcom = await resolve_cli_string(mc, pcom)
-                    with subprocess.Popen(pcom, shell=True, stdin=subprocess.PIPE, text=True) as process:
-                        (new_contact, new_scope, last_ack) = await process_line(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=jo, sink=process.stdin)
+                    with subprocess.Popen(shlex.split(pcom, posix=True), stdin=subprocess.PIPE, text=True) as process:
+                        (new_contact, new_scope, last_ack) = await process_pipeline(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=jo, sink=process.stdin)
                 except ValueError:
                     logger.error("Couldn't parse name")
                     continue
@@ -1010,7 +1009,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                     logger.error(f"Broken pipe")
                     continue
             else :
-                (new_contact, new_scope, last_ack) = await process_line(mc, line, contact, scope, prev_contact, prev_scope, json_output=jo, sink=sink)
+                (new_contact, new_scope, last_ack) = await process_pipeline(mc, line, contact, scope, prev_contact, prev_scope, json_output=jo, sink=sink)
 
             if new_contact != contact :
                 prev_contact = contact
@@ -1033,81 +1032,27 @@ if platform.system() == "Darwin" or platform.system() == "Windows":
 else:
     interactive_loop.classic = False
 
-# Helper functions to execute commands using $()
-# split finds the command
-def split_next_command(input_string):
-    """
-    Finds the first active outermost $(cmd)
-    """
-    i = 0
-    cleaned_before = []
+async def process_pipeline(mc, pipeline, contact=None, scope="*", prev_contact=None, prev_scope="*", json_output=False, sink=sys.stdout, end="\n"):
 
-    while i < len(input_string):
-        if input_string[i] == '\\':
-            if i + 1 < len(input_string):
-                cleaned_before.append(input_string[i + 1])
-                i += 2
-            else:
-                cleaned_before.append('\\')
-                i += 1
-            continue
+    pattern = r"""(?:\\.|"[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*'|[^|"\'])+"""
+    lines = [match.group(0).strip() for match in re.finditer(pattern, pipeline)]
 
-        if input_string[i:i+2] == "$(":
-            paren_balance = 1
-            k = i + 2
+    last_ack = True
+    for line in lines:
+        new_contact, new_scope, new_last_ack = await process_line(mc, line, contact=contact, scope=scope, 
+                                            prev_contact=prev_contact, prev_scope=prev_scope, json_output=json_output, sink=sink, end=end)
 
-            while k < len(input_string):
-                if input_string[k] == '\\':
-                    k += 2
-                    continue
-                if input_string[k:k+2] == "$(":
-                    paren_balance += 1
-                    k += 2
-                    continue
-                if input_string[k] == ")":
-                    paren_balance -= 1
-                    if paren_balance == 0:
-                        before = "".join(cleaned_before)
-                        return before, input_string[i+2:k], input_string[k+1:]
-                    k += 1
-                    continue
-                k += 1
+        if new_contact != contact :
+            last_contact = contact
+            contact = new_contact
 
-            raise ValueError(
-                f"Unclosed '$(' at position {i}: \"{input_string[i:]}\"")
+        if new_scope != scope :
+            last_scope = scope
+            scope = new_scope
 
-        cleaned_before.append(input_string[i])
-        i += 1
+        last_ack = new_last_ack and last_ack
 
-    return "".join(cleaned_before), None, ""
-
-# resolve deals with imbrication and calls process_line
-# it is called both from process_line and process_cmds
-# if called from the interactive, loop, resolution should be done from process_line
-# and process_cmds has nothing to do, but in case of scripts or arguments the
-# commands will be executed
-# beware, substitutions work differently (because of the tokenizer call)
-async def resolve_cli_string(mc, arg_string, contact=None, scope="*", json_output=False, end="\n"):
-    """
-    Iteratively resolves and executes commands from the inside out.
-    """
-    before, command, after = split_next_command(arg_string)
-    cmd_buffer = before
-
-    while command is not None:
-        # Resolve nested commands first
-        resolved_sub = await resolve_cli_string(mc, command, contact, scope, json_output, end)
-
-        with io.StringIO() as strm:
-            await process_line(mc, resolved_sub, contact, scope, json_output=json_output, sink=strm, end=end)
-            cmd_buffer += strm.getvalue().rstrip("\r\n")
-
-        before, command, after = split_next_command(after)
-        cmd_buffer += before
-
-    cmd_buffer += after
-
-    return cmd_buffer
+    return contact, scope, last_ack
 
 async def process_line(mc, line, contact=None, scope="*", prev_contact=None, prev_scope="*", json_output=False, sink=sys.stdout, end="\n"):
     last_ack = True
@@ -1115,17 +1060,10 @@ async def process_line(mc, line, contact=None, scope="*", prev_contact=None, pre
     if line.startswith("$$") :
         try :
             args = shlex.split(line[2:], posix=True)
-            await process_cmds(mc, args, resolve=True, json_output=json_output, sink=sink)
+            await process_cmds(mc, args, json_output=json_output, sink=sink)
         except ValueError:
             logger.error(f"Error parsing line {line[1:]}")
 
-        return contact, scope, True
-
-    try:
-        line = await resolve_cli_string(mc, line, contact, scope, json_output=json_output, end=end)
-    except ValueError as e:
-        logger.error(f"Command substitution error: {e}")
-        sink.write(f"Error: {e}\n")
         return contact, scope, True
 
     if len(line)>0 and line[-1] == "\n":
@@ -1559,7 +1497,7 @@ async def process_contact_chat_line(mc, contact, line, inside=False, json_output
                 cmds[0] == "login" :
             args = [cmds[0], contact['adv_name'], cmds[1]]
             await process_cmds(mc, args, json_output=json_output, sink=sink)
-        return True
+            return True
 
     if line == "login": # use stored password or prompt for it
         password_file = ""
@@ -3822,12 +3760,6 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
             case "msgs_subscribe" | "ms" :
                 await subscribe_to_msgs(mc, json_output=json_output)
 
-            case "shell" | "sh" :
-                argnum = 1
-                result = subprocess.run(cmds[1], shell=True,
-                    stdout=subprocess.PIPE, text=True)
-                sink.write(result.stdout)
-
             case "echo" : # prints arg to output, for debug purposes mainly
                 argnum = 1
                 sink.write(cmds[1] + end)
@@ -3840,20 +3772,6 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                     file_name = await prompt_for_file()
                 if not file_name is None:
                     output_str += await process_script(mc, file_name, json_output=json_output, sink=sink)
-
-            case "alias_get"|"aget" :
-                argnum = 1
-                if (cmds[1] in ALIASES):
-                    alias = ALIASES[cmds[1]]
-                    resolved  = await resolve_cli_string(mc, alias, json_output=json_output, end=end)
-                    output_str += resolved
-
-            case "alias_set"|"aset" :
-                argnum = 2
-                ALIASES[cmds[1]] = cmds[2]
-
-            case "aliases":
-                output_str += json.dumps(ALIASES, indent=4)+end
 
             case _ :
                 logger.error(f"Unknown command : {cmd}, {cmds} not executed ...")
@@ -3869,22 +3787,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
         logger.error("Cancelled")
         return (None, "")
 
-async def process_cmds (mc, args, json_output=False, resolve=False, sink=sys.stdout, end="\n") :
-    output_str = ""
-    cmds = []
-    for arg in args:
-        # only resolve strings if they come from shell/script or $$ in interactive mode
-        # prevents double resolution (follow this cause maybe it'll induce other issues)
-        if resolve:
-            try:
-                arg = await resolve_cli_string(mc, arg, json_output=json_output, end=end)
-            except ValueError as e:
-                logger.error(f"Command substitution error: {e}")
-                sink.write(f"Error: {e}\n")
-                return
-            arg = arg.rstrip("\r\n")
-        cmds.append(arg)
-
+async def process_cmds (mc, cmds, json_output=False, sink=sys.stdout, end="\n") :
     while cmds and len(cmds) > 0 :
         (cmds, cur_output) = await next_cmd(mc, cmds, json_output, sink=sink, end=end)
         if not cur_output is None:
@@ -3910,7 +3813,7 @@ async def process_script(mc, file, json_output=False, sink=sys.stdout):
             logger.debug(f"processing {line}")
             try :
                 cmds = shlex.split(line, posix=True)
-                await process_cmds(mc, cmds, resolve=True, json_output=json_output, sink=sink)
+                await process_cmds(mc, cmds, json_output=json_output, sink=sink)
             except ValueError:
                 logger.error(f"Error processing {line}")
     return output_str
@@ -4984,7 +4887,7 @@ async def main(argv):
         logger.debug(f"No device init script for {mc.self_info['name']}")
 
     if len(args) > 0 :
-        await process_cmds(mc, args, resolve=True, json_output=json_output, sink=sys.stdout)
+        await process_cmds(mc, args, json_output=json_output, sink=sys.stdout)
 
     if len(args) == 0 or force_interactive :
         await interactive_loop(mc, json_output=json_output)
