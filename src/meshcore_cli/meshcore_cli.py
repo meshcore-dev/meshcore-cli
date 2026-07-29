@@ -943,9 +943,6 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                                               key_bindings=bindings)
 
             line = line.strip()
-            # should replace &cmd by "$(alias_get cmd)"
-            line = re.sub(r"(?<!\\)&(\w+)", r'"$(alias_get \1)"', line)
-            line = line.replace(r"\&", "&")
 
             if line == "" : # blank line
                 continue
