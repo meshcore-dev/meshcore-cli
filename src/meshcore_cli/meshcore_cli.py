@@ -5,6 +5,7 @@
 
 import asyncio
 import os, sys, io, platform
+import string
 import time, datetime
 import getopt, json, shlex, re
 import logging
@@ -800,6 +801,10 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
     return completion_list
 make_completion_dict.custom_vars = {}
 
+def has_placeholder(template_string, name):
+    parsed_blocks = string.Formatter().parse(template_string)
+    return any(field_name == name for _, field_name, _, _ in parsed_blocks)
+
 async def interactive_loop(mc, to=None, json_output=False) :
     print("""Interactive mode, most commands from terminal chat should work.
 Use \"to\" to select recipient, use Tab to complete name ...
@@ -953,6 +958,33 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
 
             if line == "quit" or line == "q" or line == "/quit" or line == "/q" :
                 break
+
+            if line.startswith("@") and len(line) > 1: # alias => replace and resolve parameters
+                args = shlex.split(line[1:])
+                try:
+                    alias = ALIASES[args[0]]
+
+                    if has_placeholder(alias, "c"):
+                        if not contact is None and contact["type"] > 0:
+                            keywords = {"c": contact['adv_name']}
+                            pargs = args[1:]
+                        else:
+                            keywords = {"c": args[1]}
+                            pargs = args[2:]
+                    else:
+                        keywords = {}
+                        pargs = args[1:]
+
+                    line = alias.format(*pargs, **keywords)
+                except IndexError as e:
+                    logger.error(f"Error {e}")
+                    continue
+                except KeyError as e:
+                    logger.error(f"Error {e}")
+                    continue
+                except ValueError as e:
+                    logger.error(f"Error {e}")
+                    continue
 
             jo = json_output
             if line.startswith(".") : # toggle json-output for this loop
@@ -3772,6 +3804,13 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                     file_name = await prompt_for_file()
                 if not file_name is None:
                     output_str += await process_script(mc, file_name, json_output=json_output, sink=sink)
+
+            case "alias":
+                argnum = 2
+                ALIASES[cmds[1]] = cmds[2]
+
+            case "aliases":
+                output_str += json.dumps(ALIASES, indent=4) + end
 
             case _ :
                 logger.error(f"Unknown command : {cmd}, {cmds} not executed ...")
