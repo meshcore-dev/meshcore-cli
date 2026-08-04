@@ -501,6 +501,9 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
         "remove_contact" : contact_list,
         "import_contact" : {"meshcore://":None},
         "reload_contacts" : None,
+        "aliases" : None,
+        "aliases_load" : None,
+        "alias" : None,
         "login" : contact_list,
         "cmd" : contact_list,
         "req_status" : contact_list,
@@ -3819,14 +3822,43 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 else:
                     file_name = await prompt_for_file()
                 if not file_name is None:
+                    file_name = os.path.expanduser(file_name)
                     output_str += await process_script(mc, file_name, json_output=json_output, sink=sink)
 
             case "alias":
                 argnum = 2
-                ALIASES[cmds[1]] = cmds[2]
+                if cmds[2] == "":
+                    ALIASES.pop(cmds[1], None)
+                else:
+                    ALIASES[cmds[1]] = cmds[2]
 
             case "aliases":
                 output_str += json.dumps(ALIASES, indent=4) + end
+
+            case "aliases_load":
+                if len(cmds) > 1:
+                    argnum = 1
+                    file_name = cmds[1]
+                else:
+                    file_name = await prompt_for_file()
+
+                file_name = file_name.strip()
+                fn = file_name
+                if not file_name is None:
+                    file_name = os.path.expanduser(file_name)
+                    if not os.path.exists(file_name) :
+                        if os.path.exists(MCCLI_CONFIG_DIR + file_name) :
+                            file_name = MCCLI_CONFIG_DIR + file_name
+                        else:
+                            logger.error(f"File not found {fn}")
+                            file_name = None
+                    if not file_name is None:
+                        with open(file_name, "r") as f:
+                            na = json.load(f)
+                            if isinstance (na, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in na.items()):
+                                ALIASES.update(na)
+                            else:
+                                logger.error("Malformed aliases file")
 
             case _ :
                 logger.error(f"Unknown command : {cmd}, {cmds} not executed ...")
@@ -3853,11 +3885,15 @@ async def process_cmds (mc, cmds, json_output=False, sink=sys.stdout, end="\n") 
 async def process_script(mc, file, json_output=False, sink=sys.stdout):
     output_str = ""
 
+    file = file.strip()
     if not os.path.exists(file) :
-        logger.info(f"file {file} not found")
-        if json_output :
-            output_str += json.dumps({"error" : f"file {file} not found"})+"\n"
-        return output_str
+        if os.path.exists(MCCLI_CONFIG_DIR + file) :
+            file = MCCLI_CONFIG_DIR + file
+        else:
+            logger.info(f"file {file} not found")
+            if json_output :
+                output_str += json.dumps({"error" : f"file {file} not found"})+"\n"
+            return output_str
 
     with open(file, "r") as f :
         lines=f.readlines()
@@ -3888,7 +3924,9 @@ def command_help():
     sleep <secs>           : sleeps for a given amount of secs      s
     wait_key               : wait until user presses <Enter>        wk
     apply_to <f> <cmds>    : sends cmds to contacts matching f      at
-    shell <cmd>            : executes a shell command from mccli    sh
+    alias <key> <cmd>      : create an alias for key, see ?alias
+    aliases                : list all aliases
+    aliases_load           : load aliases from a file
   Messaging
     msg <name> <msg>       : send message to node by name           m  {
     wait_ack               : wait an ack                            wa }
@@ -4234,6 +4272,21 @@ To get the path for a contact, you can use three commands:
 Note that the path shown on the prompt only uses 1 byte notation without commas to keep it slim.
 
 """)
+
+    elif "alias" in cmdname or cmdname == "@":
+        print("""alias mechanism (alias, aliases, aliases_load, @)
+
+Meshcore-cli lets you create aliases to store a complex line for later use.
+
+Aliases are created using the `alias` command and retreived starting a line with `@` (@ stands for alias recall). `alias <key> \"\"` removes key from aliases
+
+The alias command takes two parameters, alias name and value. Value can contain placeholders, {c} is replaced by contact name if currently in a contact on by first parameter, other parameters are stored into {1} {2} ...
+
+You can list all aliases using `aliases` command and so using `.> <filename> aliases` will save the alias dict in a file.
+
+To recall an alias dict from a file use `aliases_load`, with a name it will try to load aliases from a file by the given name (searching also in mccli config dir), with no name it will prompt you for a file (with a file completer).
+""")
+
     else:
         print(f"Sorry, no help yet for {cmdname}")
 
