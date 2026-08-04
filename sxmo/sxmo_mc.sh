@@ -71,7 +71,7 @@ interactive_mode() {
 
 # Boucle principale de navigation
 while true; do
-    ACTION=$(printf "Interactive\nReview Messages\nSend to Contact\nSend to Channel\nSend Advert\nRefresh Cache\nSelect Companion Radio\nExit" | $DMENU -p "MeshCore:")
+    ACTION=$(printf "Interactive\nReview Messages\nSend to Contact\nSend to Channel\nSend Advert\nRefresh Cache\nSelect Companion Radio\nRun Meshy\nExit" | $DMENU -p "MeshCore:")
 
     [ -z "$ACTION" ] && exit 0
 
@@ -97,6 +97,10 @@ while true; do
         "Select Companion Radio")
             sxmo_terminal.sh "$MESHCLI" -S sleep 0
             ;;
+		"Run Meshy")
+			meshy &
+			exit 0
+			;;
         "Exit")
             exit 0
             ;;
