@@ -37,8 +37,7 @@ from meshcore import MeshCore, EventType, logger
 VERSION = "v1.6.0"
 
 # default ble address is stored in a config file
-HOME_DIR = str(Path.home())
-MCCLI_CONFIG_DIR = HOME_DIR + "/.config/meshcore/"
+MCCLI_CONFIG_DIR = os.path.expanduser("~/.config/meshcore/")
 MCCLI_ADDRESS = MCCLI_CONFIG_DIR + "default_address"
 MCCLI_HISTORY_FILE = MCCLI_CONFIG_DIR + "history"
 MCCLI_INIT_SCRIPT = MCCLI_CONFIG_DIR + "init"
@@ -995,7 +994,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                 line = line[2:].strip()
                 try:
                     fp, mcline = split_first_token(line)
-                    fp = fp.replace("~", HOME_DIR)
+                    fp = os.path.expanduser(fp)
                     with open(fp, "a") as file:
                         (new_contact, new_scope, last_ack) = await process_pipeline(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=jo, sink=file)
                 except ValueError:
@@ -1009,7 +1008,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                 line = line[1:].strip()
                 try:
                     fp, mcline = split_first_token(line)
-                    fp = fp.replace("~", HOME_DIR)
+                    fp = os.path.expanduser(fp)
                     with open(fp, "w") as file:
                         (new_contact, new_scope, last_ack) = await process_pipeline(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=jo, sink=file)
                 except ValueError:
@@ -4438,7 +4437,7 @@ async def process_repeater_line(ser, cmd, echo=False, repeater_name=None) :
             else :
                 file_path = cmd.lower().split(" ", 3)[2]
 
-            file_path = file_path.replace("~", HOME_DIR)
+            file_path = os.path.expanduser(file_path)
             with open(file_path, "r") as file:
                 ser.write("region load\r".encode())
                 for line in file:
@@ -4465,7 +4464,7 @@ async def process_repeater_line(ser, cmd, echo=False, repeater_name=None) :
             else :
                 file_path = cmd.lower().split(" ", 3)[2]
 
-            file_path = file_path.replace("~", HOME_DIR)
+            file_path = os.path.expanduser(file_path)
 
             with open(file_path, "w") as file:
                 # write header (name and timestamp)
@@ -4505,7 +4504,7 @@ async def process_repeater_line(ser, cmd, echo=False, repeater_name=None) :
             else :
                 file_path = cmd.lower().split(" ", 2)[1]
 
-            file_path = file_path.replace("~", HOME_DIR)
+            file_path = os.path.expanduser(file_path)
 
             return await process_repeater_script(ser, file_path)
 
