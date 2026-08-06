@@ -96,6 +96,13 @@ INVERT_SLASH = False
 # Aliases are stored in a global dict
 ALIASES={}
 
+# Handlers for streaming events to processes
+HANDLERS = { # dicts that will be indexed by numbers
+    "rxlog" : {}, 
+    "msgs" : {},
+}
+LAST_HANDLER_ID = 0
+
 def split_first_token(line):
     lexer = shlex.shlex(line, posix=True)
     lexer.whitespace_split = True
@@ -294,6 +301,10 @@ async def handle_log_rx(event):
         msg = json.dumps(event.payload)
         print(msg)
 
+    for handler in HANDLERS["rxlog"].values():
+        msg = json.dumps(event.payload)
+        handler["sink"].write(msg+"\n")
+        handler["sink"].flush()
 
 handle_log_rx.json_log_rx = False
 handle_log_rx.channel_echoes = False
@@ -388,6 +399,11 @@ async def handle_message(event):
         print(await process_event_message(handle_message.mc, event,
                                 json_output=handle_message.json_output), end="")
     await log_message(handle_message.mc, event.payload.copy())
+
+    for handler in HANDLERS["msgs"].values():
+        msg = json.dumps(event.payload)
+        handler["sink"].write(msg+"\n")
+        handler["sink"].flush()
 
 handle_message.json_output=False
 handle_message.mc=None
@@ -504,6 +520,9 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
         "aliases" : None,
         "aliases_load" : None,
         "alias" : None,
+        "handler_attach": {"rxlog":None, "msgs":None},
+        "handler_detach": None,
+        "handlers": None,
         "login" : contact_list,
         "cmd" : contact_list,
         "req_status" : contact_list,
@@ -2045,7 +2064,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
     """ process next command
         returns (following, output_str)
     """
-    global ARROW_HEAD, SLASH_START, SLASH_END, INVERT_SLASH
+    global ARROW_HEAD, SLASH_START, SLASH_END, INVERT_SLASH, LAST_HANDLER_ID
     output_str = ""
     try :
         argnum = 0
@@ -3859,6 +3878,55 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                                 ALIASES.update(na)
                             else:
                                 logger.error("Malformed aliases file")
+
+            case "handler_attach":
+                argnum = 2
+                htype = cmds[1]
+                cmd = cmds[2]
+                process = None
+
+                try:
+                    if not htype in ["msgs", "rxlog"]:
+                        raise ValueError (f"Unknown handler type {htype}")
+                    process = subprocess.Popen(shlex.split(cmd, posix=True), stdin=subprocess.PIPE, text=True)
+                    handler = {}
+                    LAST_HANDLER_ID = LAST_HANDLER_ID + 1
+                    handler["id"] = LAST_HANDLER_ID
+                    handler["type"] = htype
+                    handler["cmd"] = cmd
+                    handler["process"] = process
+                    handler["sink"] = process.stdin
+                    HANDLERS[htype][LAST_HANDLER_ID] = handler
+                    if json_output:
+                        output_str += json.dumps(handler, default=str)+end
+                    else:
+                        output_str += f"New handler {handler["id"]}{end}"
+                except ValueError as e:
+                    logger.error(f"Value error {e}")
+                except FileNotFoundError:
+                    logger.error(f"File not found {cmd}")
+                except PermissionError:
+                    logger.error(f"Permission denied: {cmd}")
+                except OSError as e:
+                    logger.error(f"Cannot pipe: {e}")
+                except BrokenPipeError:
+                    logger.error(f"Broken pipe")
+
+            case "handler_detach":
+                argnum = 1
+                nb = int(cmds[1])
+                handlers = HANDLERS["msgs"]|HANDLERS["rxlog"]
+                handler = handlers[nb]
+                handler["process"].terminate
+                det = HANDLERS[handler["type"]].pop(nb)
+                if json_output:
+                    output_str += json.dumps({"handler": det,
+                                              "status": "detatched"}, default=str)+end
+                else:
+                    output_str += f"Successfully detached {nb} of cmd {handler["cmd"]}{end}"
+
+            case "handlers":
+                output_str += json.dumps(HANDLERS, default=str)+end
 
             case _ :
                 logger.error(f"Unknown command : {cmd}, {cmds} not executed ...")
