@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # meshcore-cli wrapper for SXMO
 
 MESHCLI="meshcore-cli"
@@ -6,6 +6,8 @@ CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/sxmo-mc"
 CONTACTS_CACHE="$CACHE_DIR/contacts"
 CHANNELS_CACHE="$CACHE_DIR/channels"
 DMENU="sxmo_dmenu.sh"
+
+CMD_HISTORY_FILE="$CACHE_DIR"/history
 
 mkdir -p "$CACHE_DIR"
 
@@ -65,18 +67,52 @@ review_messages() {
     sxmo_terminal.sh -T "meshcore-cli sync" sh -c "$MESHCLI sync_msgs; echo; echo 'Press Enter to return to menu...'; read dummy"
 }
 
+exec_mccli_cmd_and_wait() {
+    exec_mccli_cmd "$1" ";echo -e '\nPress Enter to continue';read exit"
+}
+
+exec_mccli_cmd() {
+    sxmo_terminal.sh -T "$MESHCLI $1" sh -c "$MESHCLI $1$2"
+}
+
+choose_cmd_and_exec() {
+    touch "$CMD_HISTORY_FILE"
+    CMD_HISTORY="$(
+        tac "$CMD_HISTORY_FILE" | nl | sort -uk 2 | sort -k 1 | cut -f 2 | grep .
+    )"
+
+    ENTRY="$(
+        printf %b "
+            Close Menu
+            $CMD_HISTORY
+        " | xargs -0 echo |
+            sed '/^[[:space:]]*$/d' |
+            awk '{$1=$1};1' |
+            eval $DMENU -p 'MeshCore cmd:')"
+
+    if [[ "$ENTRY" =~ "Close Menu" ]]; then
+        return 1
+    fi
+
+    grep -vi "$ENTRY" "$CMD_HISTORY_FILE" |grep . > "$CMD_HISTORY_FILE".tmp
+    mv "$CMD_HISTORY_FILE".tmp "$CMD_HISTORY_FILE"
+    printf %b "$ENTRY\n" >> "$CMD_HISTORY_FILE"
+
+    exec_mccli_cmd_and_wait "$ENTRY"
+}
+
 interactive_mode() {
-	sxmo_terminal.sh -T "meshcore-cli interactive" sh -c "$MESHCLI"
+    sxmo_terminal.sh -T "meshcore-cli interactive" sh -c "$MESHCLI"
 }
 
 # Boucle principale de navigation
 while true; do
-    ACTION=$(printf "Interactive\nReview Messages\nSend to Contact\nSend to Channel\nSend Advert\nRefresh Cache\nSelect Companion Radio\nRun Meshy\nExit" | $DMENU -p "MeshCore:")
+    ACTION=$(printf "Execute Command\nInteractive\nReview Messages\nSend to Contact\nSend to Channel\nRefresh Cache\nSelect Companion Radio\nRun Meshy\nExit" | $DMENU -p "MeshCore:")
 
     [ -z "$ACTION" ] && exit 0
 
     case "$ACTION" in
-         "Interactive")
+        "Interactive")
             interactive_mode
             ;;
         "Review Messages")
@@ -88,8 +124,8 @@ while true; do
         "Send to Channel")
             send_to_channel
             ;;
-        "Send Advert")
-            $MESHCLI floodadv
+        "Execute Command")
+            choose_cmd_and_exec
             ;;
         "Refresh Cache")
             refresh_cache
@@ -97,10 +133,10 @@ while true; do
         "Select Companion Radio")
             sxmo_terminal.sh "$MESHCLI" -S sleep 0
             ;;
-		"Run Meshy")
-			meshy &
-			exit 0
-			;;
+        "Run Meshy")
+            meshy &
+            exit 0
+            ;;
         "Exit")
             exit 0
             ;;
