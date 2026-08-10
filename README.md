@@ -170,6 +170,9 @@ You can redirect output of a command using `>`, `>>` or `|` symbols at the start
 - `>>`: redirects to the file in append mode
 - `|`: redirects to the input of shell command (pipe)
 
+You can also do the other way around and use a shell script or command into a meshcore command, this is done prefixing with `<|` (for input pipe). Use `{res}` placeholder in your meshcli line to replace with the output of the shell command.
+- `<| whoami set name {res}`: will give your unix username to your node
+
 If you start the line with `.` it activates `json_output` for this execution, letting you output json for feeding `jq`.
 
 #### Flood Scope in interactive mode
