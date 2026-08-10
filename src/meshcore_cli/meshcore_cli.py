@@ -98,7 +98,7 @@ ALIASES={}
 
 # Handlers for streaming events to processes
 HANDLERS = { # dicts that will be indexed by numbers
-    "rxlog" : {}, 
+    "rxlog" : {},
     "msgs" : {},
 }
 LAST_HANDLER_ID = 0
@@ -118,6 +118,16 @@ def split_first_token(line):
 def escape_ansi(line):
     ansi_escape = re.compile(r'(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]')
     return ansi_escape.sub('', line)
+
+class SafeFormatter(string.Formatter):
+    def get_value(self, key, args, kwargs):
+        if isinstance(key, str) and key not in kwargs:
+            return f"{{{key}}}"
+        return super().get_value(key, args, kwargs)
+
+formatter = SafeFormatter()
+
+formatter = SafeFormatter()
 
 async def process_event_message(mc, ev, json_output, end="\n"):
     """ display incoming message
@@ -996,7 +1006,7 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                         keywords = {}
                         pargs = args[1:]
 
-                    line = alias.format(*pargs, **keywords)
+                    line = formatter.format(alias, *pargs, **keywords)
                 except IndexError as e:
                     logger.error(f"Error {e}")
                     continue
@@ -1061,6 +1071,31 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                 except BrokenPipeError:
                     logger.error(f"Broken pipe")
                     continue
+
+            elif line.startswith("<|") : # from process redirection
+                line = line[2:].strip()
+                try:
+                    pcom, mcline = split_first_token(line)
+                    res = subprocess.run(shlex.split(pcom, posix=True), capture_output=True, text=True)
+                    mcline = mcline.format(res=res.stdout)
+                    (new_contact, new_scope, last_ack) = await process_pipeline(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=jo, sink=sink)
+                except ValueError:
+                    logger.error("Couldn't parse name")
+                    continue
+                except FileNotFoundError:
+                    logger.error(f"File not found {pcom}")
+                    continue
+                except PermissionError:
+                    logger.error(f"Permission denied: {pcom}")
+                    continue
+                except OSError as e:
+                    logger.error(f"Cannot pipe: {e}")
+                    continue
+                except BrokenPipeError:
+                    logger.error(f"Broken pipe")
+                    continue
+
+
             else :
                 (new_contact, new_scope, last_ack) = await process_pipeline(mc, line, contact, scope, prev_contact, prev_scope, json_output=jo, sink=sink)
 
