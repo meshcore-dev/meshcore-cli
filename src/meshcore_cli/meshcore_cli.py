@@ -1047,6 +1047,9 @@ else:
 
 
 async def process_redirected_line(mc, line, contact=None, scope="*", prev_contact=None, prev_scope="*", json_output=False, sink=sys.stdout, end="\n"):
+            new_contact = contact
+            new_scope = scope
+            last_ack = True
 
             if line.startswith(">>") : # append to-file redirection
                 line = line[2:].strip()
@@ -1089,13 +1092,25 @@ async def process_redirected_line(mc, line, contact=None, scope="*", prev_contac
                 except BrokenPipeError:
                     logger.error(f"Broken pipe")
 
-            elif line.startswith("<|") : # from process redirection
-                line = line[2:].strip()
+            elif line.startswith("<") : # from process redirection
+                if line[1] == "|": 
+                    key = ""
+                    line = line[2:].strip()
+                else:
+                    key = line[1:].split("|", 1)[0].strip()
+                    line = line[1:].split("|", 1)[1].strip()
                 try:
                     pcom, mcline = split_first_token(line)
                     res = subprocess.run(shlex.split(pcom, posix=True), capture_output=True, text=True)
-                    mcline = mcline.format(res=res.stdout)
+                    replacement = res.stdout.strip()
+                    if key == "":
+                        mcline = formatter.format(mcline,replacement)
+                    else:
+                        keywords = {key: replacement}
+                        mcline = formatter.format(mcline, **keywords)
                     (new_contact, new_scope, last_ack) = await process_redirected_line(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=json_output, sink=sink)
+                except IndexError as e:
+                    logger.error(f"Error with substitution: {e}")
                 except ValueError:
                     logger.error("Couldn't parse name")
                 except FileNotFoundError:
