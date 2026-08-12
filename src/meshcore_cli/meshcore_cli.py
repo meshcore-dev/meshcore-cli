@@ -102,6 +102,33 @@ HANDLERS = { # dicts that will be indexed by numbers
     "msgs" : {},
 }
 LAST_HANDLER_ID = 0
+HANDLER_QUEUE_SIZE = 100
+
+def enqueue_handler_event(handler_type, payload):
+    message = json.dumps(payload) + "\n"
+    for handler in HANDLERS[handler_type].values():
+        if handler["closed"]:
+            continue
+        try:
+            handler["queue"].put_nowait(message)
+        except asyncio.QueueFull:
+            logger.warning(f"Handler {handler['id']} queue is full; dropping event")
+
+async def write_handler(handler):
+    try:
+        while True:
+            message = await handler["queue"].get()
+            try:
+                handler["process"].stdin.write(message.encode())
+                await handler["process"].stdin.drain()
+            except (BrokenPipeError, ConnectionResetError):
+                handler["closed"] = True
+                logger.warning(f"Handler {handler['id']} closed its input pipe")
+                return
+            finally:
+                handler["queue"].task_done()
+    except asyncio.CancelledError:
+        raise
 
 def split_first_token(line):
     lexer = shlex.shlex(line, posix=True)
@@ -311,10 +338,7 @@ async def handle_log_rx(event):
         msg = json.dumps(event.payload)
         print(msg)
 
-    for handler in HANDLERS["rxlog"].values():
-        msg = json.dumps(event.payload)
-        handler["sink"].write(msg+"\n")
-        handler["sink"].flush()
+    enqueue_handler_event("rxlog", event.payload)
 
 handle_log_rx.json_log_rx = False
 handle_log_rx.channel_echoes = False
@@ -410,10 +434,7 @@ async def handle_message(event):
                                 json_output=handle_message.json_output), end="")
     await log_message(handle_message.mc, event.payload.copy())
 
-    for handler in HANDLERS["msgs"].values():
-        msg = json.dumps(event.payload)
-        handler["sink"].write(msg+"\n")
-        handler["sink"].flush()
+    enqueue_handler_event("msgs", event.payload)
 
 handle_message.json_output=False
 handle_message.mc=None
@@ -3948,14 +3969,19 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 try:
                     if not htype in ["msgs", "rxlog"]:
                         raise ValueError (f"Unknown handler type {htype}")
-                    process = subprocess.Popen(shlex.split(cmd, posix=True), stdin=subprocess.PIPE, text=True)
+                    process = await asyncio.create_subprocess_exec(
+                        *shlex.split(cmd, posix=True),
+                        stdin=asyncio.subprocess.PIPE,
+                    )
                     handler = {}
                     LAST_HANDLER_ID = LAST_HANDLER_ID + 1
                     handler["id"] = LAST_HANDLER_ID
                     handler["type"] = htype
                     handler["cmd"] = cmd
                     handler["process"] = process
-                    handler["sink"] = process.stdin
+                    handler["queue"] = asyncio.Queue(maxsize=HANDLER_QUEUE_SIZE)
+                    handler["closed"] = False
+                    handler["writer_task"] = asyncio.create_task(write_handler(handler))
                     HANDLERS[htype][LAST_HANDLER_ID] = handler
                     if json_output:
                         output_str += json.dumps(handler, default=str)+end
@@ -3977,12 +4003,22 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 nb = int(cmds[1])
                 handlers = HANDLERS["msgs"]|HANDLERS["rxlog"]
                 handler = handlers[nb]
-                handler["process"].terminate()
+                handler["closed"] = True
+                handler["writer_task"].cancel()
                 try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
+                    await handler["writer_task"]
+                except asyncio.CancelledError:
+                    pass
+                handler["process"].stdin.close()
+                try:
+                    await asyncio.wait_for(handler["process"].wait(), timeout=5)
+                except asyncio.TimeoutError:
+                    handler["process"].terminate()
+                    try:
+                        await asyncio.wait_for(handler["process"].wait(), timeout=5)
+                    except asyncio.TimeoutError:
+                        handler["process"].kill()
+                        await handler["process"].wait()
                 det = HANDLERS[handler["type"]].pop(nb)
                 if json_output:
                     output_str += json.dumps({"handler": det,
