@@ -1644,16 +1644,6 @@ async def process_contact_chat_line(mc, contact, line, inside=False, json_output
         password_file = ""
         password = ""
         if os.path.isdir(MCCLI_CONFIG_DIR) :
-            # if a password file exists with node name open it and destroy it
-            password_file = MCCLI_CONFIG_DIR + contact['adv_name'] + ".pass"
-            if os.path.exists(password_file) :
-                with open(password_file, "r", encoding="utf-8") as f :
-                    password=f.readline().strip()
-                os.remove(password_file)
-                password_file = MCCLI_CONFIG_DIR + contact["public_key"] + ".pass"
-                with open(password_file, "w", encoding="utf-8") as f :
-                    f.write(password)
-
             # this is the new correct password file, using pubkey
             password_file = MCCLI_CONFIG_DIR + contact["public_key"] + ".pass"
             if os.path.exists(password_file) :
@@ -1678,9 +1668,6 @@ async def process_contact_chat_line(mc, contact, line, inside=False, json_output
         return True
 
     if line.startswith("forget_password") or line.startswith("fp"):
-        password_file = MCCLI_CONFIG_DIR + contact['adv_name'] + ".pass"
-        if os.path.exists(password_file):
-            os.remove(password_file)
         password_file = MCCLI_CONFIG_DIR + contact['public_key'] + ".pass"
         if os.path.exists(password_file):
             os.remove(password_file)
