@@ -481,7 +481,7 @@ class MyNestedCompleter(NestedCompleter):
                 opts = self.options.keys()
             completer = WordCompleter(
                 opts, ignore_case=self.ignore_case,
-                pattern=re.compile(r"([a-zA-Z0-9_\\/\#\?]+|[^a-zA-Z0-9_\s\#\?]+)"))
+                pattern=re.compile(r"([a-zA-Z0-9_\\/\#\?@]+|[^a-zA-Z0-9_\s\#\?@]+)"))
             yield from completer.get_completions(document, complete_event)
         else: # normal behavior for remainder
             yield from super().get_completions(document, complete_event)
