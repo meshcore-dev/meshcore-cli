@@ -3960,7 +3960,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                     if json_output:
                         output_str += json.dumps(handler, default=str)+end
                     else:
-                        output_str += f"New handler {handler["id"]}{end}"
+                        output_str += f"New handler {handler['id']}{end}"
                 except ValueError as e:
                     logger.error(f"Value error {e}")
                 except FileNotFoundError:
@@ -3977,13 +3977,18 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 nb = int(cmds[1])
                 handlers = HANDLERS["msgs"]|HANDLERS["rxlog"]
                 handler = handlers[nb]
-                handler["process"].terminate
+                handler["process"].terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
                 det = HANDLERS[handler["type"]].pop(nb)
                 if json_output:
                     output_str += json.dumps({"handler": det,
                                               "status": "detatched"}, default=str)+end
                 else:
-                    output_str += f"Successfully detached {nb} of cmd {handler["cmd"]}{end}"
+                    output_str += f"Successfully detached {nb} of cmd {handler['cmd']}{end}"
 
             case "handlers":
                 output_str += json.dumps(HANDLERS, default=str)+end
