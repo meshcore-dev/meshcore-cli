@@ -654,6 +654,7 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
         "?path":None,
         "?change_path":None,
         "?trace":None,
+        "?alias":None,
     }
 
     contact_completion_list = {
@@ -782,6 +783,10 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
         completion_list.update(dict(root_completion_list))
         completion_list["set"].update(make_completion_dict.custom_vars)
         completion_list["get"].update(make_completion_dict.custom_vars)
+        root_alias_completion_list = {}
+        for k,v in ALIASES.items():
+            root_alias_completion_list[k]=None
+        completion_list["alias"]=root_alias_completion_list
     else :
         completion_list.update({
             "send" : None,
@@ -792,6 +797,12 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
             completion_list.update(repeater_completion_list)
         if (to['type'] == 4) : #specific to sensors
             completion_list.update(sensor_completion_list)
+
+    aliases_completion_list = {}
+    for k,v in ALIASES.items():
+        aliases_completion_list["@"+k]=None
+
+    completion_list.update(aliases_completion_list)
 
     slash_root_completion_list = {}
     for k,v in root_completion_list.items():
@@ -3885,11 +3896,20 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                     output_str += await process_script(mc, file_name, json_output=json_output, sink=sink)
 
             case "alias":
-                argnum = 2
-                if cmds[2] == "":
-                    ALIASES.pop(cmds[1], None)
-                else:
-                    ALIASES[cmds[1]] = cmds[2]
+                if len(cmds) > 2:
+                    argnum = 2
+                    if cmds[2] == "":
+                        ALIASES.pop(cmds[1], None)
+                    else:
+                        ALIASES[cmds[1]] = cmds[2]
+                elif len(cmds) > 1: # get value if exists
+                    argnum = 1
+                    if not cmds[1] in ALIASES:
+                        logger.error("Alias not set")
+                    else:
+                        output_str += ALIASES[cmds[1]] + end
+                else: # no arg ... synonym of aliases
+                    output_str += json.dumps(ALIASES, indent=4) + end
 
             case "aliases":
                 output_str += json.dumps(ALIASES, indent=4) + end
