@@ -160,7 +160,10 @@ class SafeFormatter(string.Formatter):
             return f"{{{key}}}"
         return super().get_value(key, args, kwargs)
 
-formatter = SafeFormatter()
+    def get_field(self, field_name, args, kwargs):
+        if "." in field_name or "[" in field_name:
+            raise ValueError(f"Attribute/index access not allowed in format field: {field_name!r}")
+        return super().get_field(field_name, args, kwargs)
 
 formatter = SafeFormatter()
 
