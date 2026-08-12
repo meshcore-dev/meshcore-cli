@@ -175,6 +175,8 @@ You can also do the other way around and use a shell script or command into a me
 
 If you start the line with `.` it activates `json_output` for this execution, letting you output json for feeding `jq`.
 
+Some examples are available in the [examples scripts directory](scripts).
+
 #### Flood Scope in interactive mode
 
 Flood scope has recently been introduced in meshcore (from `v1.10.0`). It limits the scope of packets to regions, using transport codes in the frame.

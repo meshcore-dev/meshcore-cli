@@ -40,7 +40,7 @@ alias nmap ".|\"neighbour_map.sh -s -z17 -m -p carto -f1.5\" /lc | /rn {c}"
 @nmap af
 ```
 
-## Putting results of a shell command into your commands
+## Feeding output of shell commands to meshcore-cli
 
 `<|` will let you put the result of a script (its stdout not return value) in a meshcore line, substituting the elements between curlies.
 
@@ -53,3 +53,15 @@ alias mepo_set_coords '<lat| "ask_mepo_coords.sh lat" <lon| "mepo_coords keep lo
 ```
 
 The `getpos.py` python script can be used to query the position of your device (especially for linux phones) through `geoclue`.
+
+## Aliases
+
+If the scripts given above are in your `PATH`, you can use the following alias to access the commands (using `aliases_load`).
+
+```json
+{
+    "mepo_set_coords": "<lat| \"mepo_coords lat\" <lon| \"mepo_coords keep lon\" set lat {lat} | set lon {lon}",
+    "nmap": ".|\"neighbour_map.sh -s -z17 -m -p carto -f1.5\" /lc | /rn {c}",
+    "contacts_map": "|\"contact_markers.sh {0}\" get coords |.lc"
+}
+```
