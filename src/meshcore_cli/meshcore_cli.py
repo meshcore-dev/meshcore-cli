@@ -1062,7 +1062,12 @@ Some cmds have an help accessible with ?<cmd>. Do ?[Tab] to get a list.
                 jo = True
                 line = line[1:].strip()
 
-            (new_contact, new_scope, last_ack) = await process_redirected_line(mc, line, contact, scope, prev_contact, prev_scope, json_output=jo, sink=sink)
+            try:
+                (new_contact, new_scope, last_ack) = await process_redirected_line(mc, line, contact, scope, prev_contact, prev_scope, json_output=jo, sink=sink)
+            except Exception as e:
+                logger.error(f"Unexpected error: {e}")
+                logger.debug(traceback.format_exc())
+                continue
 
             if new_contact != contact :
                 prev_contact = contact
@@ -1100,8 +1105,8 @@ async def process_redirected_line(mc, line, contact=None, scope="*", prev_contac
                         (new_contact, new_scope, last_ack) = await process_redirected_line(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=json_output, sink=file)
                 except ValueError:
                     logger.error("Couldn't parse filename")
-                except FileNotFoundError:
-                    logger.error("File not found")
+                except OSError as e:
+                    logger.error(f"Cannot append to file: {e}")
 
             elif line.startswith(">") : # to-file redirection
                 line = line[1:].strip()
@@ -1112,8 +1117,8 @@ async def process_redirected_line(mc, line, contact=None, scope="*", prev_contac
                         (new_contact, new_scope, last_ack) = await process_redirected_line(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=json_output, sink=file)
                 except ValueError:
                     logger.error("Couldn't parse filename")
-                except FileNotFoundError:
-                    logger.error("File not found")
+                except OSError as e:
+                    logger.error(f"Cannot write to file: {e}")
 
             elif line.startswith("|") : # to process redirection
                 line = line[1:].strip()
@@ -1133,13 +1138,14 @@ async def process_redirected_line(mc, line, contact=None, scope="*", prev_contac
                     logger.error(f"Broken pipe")
 
             elif line.startswith("<") : # from process redirection
-                if line[1] == "|": 
-                    key = ""
-                    line = line[2:].strip()
-                else:
-                    key = line[1:].split("|", 1)[0].strip()
-                    line = line[1:].split("|", 1)[1].strip()
                 try:
+                    if line[1] == "|":
+                        key = ""
+                        line = line[2:].strip()
+                    else:
+                        key = line[1:].split("|", 1)[0].strip()
+                        line = line[1:].split("|", 1)[1].strip()
+
                     pcom, mcline = split_first_token(line)
                     res = subprocess.run(shlex.split(pcom, posix=True), capture_output=True, text=True)
                     replacement = res.stdout.strip()
@@ -1172,15 +1178,15 @@ async def process_pipeline(mc, pipeline, contact=None, scope="*", prev_contact=N
 
     last_ack = True
     for line in lines:
-        new_contact, new_scope, new_last_ack = await process_line(mc, line, contact=contact, scope=scope, 
+        new_contact, new_scope, new_last_ack = await process_line(mc, line, contact=contact, scope=scope,
                                             prev_contact=prev_contact, prev_scope=prev_scope, json_output=json_output, sink=sink, end=end)
 
         if new_contact != contact :
-            last_contact = contact
+            prev_contact = contact
             contact = new_contact
 
         if new_scope != scope :
-            last_scope = scope
+            prev_scope = scope
             scope = new_scope
 
         last_ack = new_last_ack and last_ack
@@ -2425,7 +2431,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                         else:
                             output_str += f"ok{end}"
                     case "tuning":
-                        params=cmds[2].commands.split(",")
+                        params=cmds[2].split(",")
                         res = await mc.commands.set_tuning(
                             int(params[0]), int(params[1]))
                         logger.debug(res)
@@ -2556,7 +2562,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                         if json_output :
                             output_str += json.dumps({"classic_prompt" : interactive_loop.classic})+end
                         else:
-                            output_str += f"{'on' if y.classic else 'off'}{end}"
+                            output_str += f"{'on' if interactive_loop.classic else 'off'}{end}"
                     case "json_msgs":
                         if json_output :
                             output_str += json.dumps({"json_msgs" : handle_message.json_output})+end
@@ -2584,7 +2590,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                             output_str += f"{'on' if handle_log_rx.channel_echoes else 'off'}{end}"
                     case "advert_echoes":
                         if json_output :
-                            output_str += json.dumps({"advert_echoes" : handle_log_rx.channel_echoes})+end
+                            output_str += json.dumps({"advert_echoes" : handle_log_rx.advert_echoes})+end
                         else:
                             output_str += f"{'on' if handle_log_rx.advert_echoes else 'off'}{end}"
                     case "echo_unk_chans":
@@ -2984,7 +2990,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 argnum = 2
                 dest = None
 
-                if len(cmds[1]) == 12: # possibly an hex prefix
+                if len(cmds[1]) >= 12: # possibly an hex prefix
                     try:
                         dest = bytes.fromhex(cmds[1])
                     except ValueError:
@@ -3230,7 +3236,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                             output_str += "Error getting data" + end
                     else :
                         if json_output :
-                            output_str += json.dumps({"repeater": contact["adv_name"]}, {"regions": res})+end
+                            output_str += json.dumps({"repeater": contact["adv_name"], "regions": res})+end
                         else :
                             output_str += f"{contact['adv_name']} repeats {res}{end}"
 
@@ -4056,6 +4062,10 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
     except (EOFError, KeyboardInterrupt):
         logger.error("Cancelled")
         return (None, "")
+    except Exception as e:
+        logger.error(f"Unexpected error while processing '{cmds[0]}': {e}")
+        logger.debug(traceback.format_exc())
+        return (None, "")
 
 async def process_cmds (mc, cmds, json_output=False, sink=sys.stdout, end="\n") :
     while cmds and len(cmds) > 0 :
@@ -4461,11 +4471,11 @@ Note that the path shown on the prompt only uses 1 byte notation without commas 
 
 Meshcore-cli lets you create aliases to store a complex line for later use.
 
-Aliases are created using the `alias` command and retreived starting a line with `@` (@ stands for alias recall). `alias <key> \"\"` removes key from aliases
+Aliases are created using the `alias` command and retreived starting a line with `@` (@ stands for alias recall). `alias <key> \"\"` removes key from aliases, if only one parameter is given to the command, the content of the alias is displayed.
 
 The alias command takes two parameters, alias name and value. Value can contain placeholders, {c} is replaced by contact name if currently in a contact on by first parameter, other parameters are stored into {1} {2} ...
 
-You can list all aliases using `aliases` command and so using `.> <filename> aliases` will save the alias dict in a file.
+You can list all aliases using `aliases` command and so using `.> <filename> aliases` will save the alias dict in a file (`alias` with no parameter will act as `aliases`).
 
 To recall an alias dict from a file use `aliases_load`, with a name it will try to load aliases from a file by the given name (searching also in mccli config dir), with no name it will prompt you for a file (with a file completer).
 """)
@@ -4599,7 +4609,7 @@ REPEATER_HELP = f"""
 
 async def prompt_for_file():
     try:
-        if os.path.isDIR(MCCLI_CONFIG_DIR):
+        if os.path.isdir(MCCLI_CONFIG_DIR):
             region_files_history = FileHistory(MCCLI_REGION_FILES_HISTORY)
         else:
             region_files_history = None
@@ -4714,8 +4724,13 @@ async def process_repeater_line(ser, cmd, echo=False, repeater_name=None) :
 
                 # seek start of regions description
                 line = ser.readline().decode(errors='ignore')
+                i = 0
                 while not line.startswith("  ->") :
                     line = ser.readline().decode(errors='ignore')
+                    i += 1
+                    if i > 30:
+                        logger.error("Error while communicating with target for downloading region")
+                        return False
 
                 line = line[5:]
 
@@ -4809,8 +4824,13 @@ async def get_repeater_name(ser):
     # Try to get device name
     ser.write(b"get name\r")
     line = ""
+    i = 0
     while not line.startswith("get name"):
         line = ser.readline().decode(errors="ignore").rstrip()
+        i += 1
+        if (i>30) :
+            logger.error("Could not retreive name")
+            return "UNKNOWN"
 
     device_name = "Repeater"
     line = ser.readline().decode(errors="ignore").rstrip()
@@ -4823,8 +4843,13 @@ async def get_repeater_version(ser):
     # Getting version
     ser.write(b"ver\r")
     line = ser.readline().decode(errors="ignore").rstrip()
+    i = 0
     while not line == "ver":
         line = ser.readline().decode(errors="ignore").rstrip()
+        i += 1
+        if (i > 30):
+            logger.error("Error reading version")
+            return "unknown"
 
     device_version = "unknown"
     line = ser.readline().decode(errors="ignore").rstrip()
