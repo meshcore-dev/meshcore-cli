@@ -4039,6 +4039,11 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
             case "handlers":
                 output_str += json.dumps(HANDLERS, default=str)+end
 
+            case "chat" | "im" | "interactive":
+                # kept for retrocompatibility, but this is now not 
+                # allowed to do chat from chat so this will break the loop
+                pass
+
             case _ :
                 logger.error(f"Unknown command : {cmd}, {cmds} not executed ...")
                 return (None, output_str)
@@ -4110,6 +4115,8 @@ def command_help():
     alias <key> <cmd>      : create an alias for key, see ?alias
     aliases                : list all aliases
     aliases_load           : load aliases from a file
+    handler_attach <d> <c> : attach c as a handler for d (rxlog|msgs)
+    handler_detach <n>     : detach an handler (from its handle n)
   Messaging
     msg <name> <msg>       : send message to node by name           m  {
     wait_ack               : wait an ack                            wa }
@@ -5193,6 +5200,9 @@ async def main(argv):
         logger.debug(f"No device init script for {mc.self_info['name']}")
 
     if len(args) > 0 :
+        if args[-1] == "interactive" or args[-1] == "chat" or args[-1] == "im":
+            force_interactive = True
+             
         await process_cmds(mc, args, json_output=json_output, sink=sys.stdout)
 
     if len(args) == 0 or force_interactive :

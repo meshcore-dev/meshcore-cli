@@ -90,6 +90,11 @@ Commands are given after arguments, they can be chained and some have shortcuts.
     sleep &lt;secs&gt;           : sleeps for a given amount of secs      s
     wait_key               : wait until user presses &lt;Enter&gt;        wk
     apply_to &lt;f&gt; &lt;cmds&gt;    : sends cmds to contacts matching f      at
+    alias &lt;key&gt; &lt;cmd&gt;      : create an alias for key, see ?alias
+    aliases                : list all aliases
+    aliases_load           : load aliases from a file
+    handler_attach &lt;d&gt; &lt;c&gt; : attach c as a handler for d (rxlog|msgs)
+    handler_detach &lt;n&gt;     : detach an handler (from its handle n)
   Messaging
     msg &lt;name&gt; &lt;msg&gt;       : send message to node by name           m  {
     wait_ack               : wait an ack                            wa }
@@ -147,7 +152,7 @@ Commands are given after arguments, they can be chained and some have shortcuts.
 
 aka Instant Message or chat mode ...
 
-Chat mode lets you interactively interact with your node or remote nodes. It is automatically triggered when no option is given on the command line.
+Chat mode lets you interactively interact with your node or remote nodes. It is automatically triggered when no option is given on the command line and can be summoned using the `-i` parameter.
 
 You'll get a prompt with the name of your node. From here you can type meshcore-cli commands. The prompt has history and a basic completion (pressing tab will display possible command or argument options).
 
@@ -202,6 +207,25 @@ f1down/#fdl|*> 8
 #fdl f1down: 8                                                 [25] -4.75-112
 #fdl f1down: 8                                               [2521]  1.00-109
 ```
+
+#### Aliases
+
+You can set aliases to quickly access complex commands. Aliases are managed using the `alias` command (see `?alias` from meshcore-cli). They can then be recalled prefixing your line with `@`.
+
+You can use placeholders using python format syntax `{}`, which will be replaced by parameters given on the command line. The special `{c}` placeholder is used to specify contact name, when in a contact it will be replaced by the contact name, and outside by the first parameter.
+
+Aliases can be saved using a redirection `> filename aliases` and loaded from a json file using `aliases_load`. For instance you can add in your `init` file a `aliases_load ~/.config/meshcore/aliases.json` to load your own aliases at startup (there is no default aliases file).
+
+#### Handlers
+
+Shell processes can be attached to `rxlog` or `msgs` using `handler_attach` and `handler_detach` commands.
+
+For instance:
+```
+handler_attach rxlog cat
+```
+
+Will print out the content of `rx_log` as it comes in.
 
 ### Contact management
 
@@ -319,7 +343,7 @@ $ meshcli msg t114_fdl hello wa | jq -cs
 # But this could have been done interactively using the chat mode
 # Here from the techo side. Note that un-acked messages will be
 # signaled with an ! at the start of the prompt (or red color in color mode)
-$ meshcli chat
+$ meshcli -i
 INFO:meshcore:BLE Connection started
 Interactive mode, most commands from terminal chat should work.
 Use "to" to selects contact, "list" to list contacts, "send" to send a message ...
