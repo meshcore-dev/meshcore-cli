@@ -130,6 +130,14 @@ async def write_handler(handler):
     except asyncio.CancelledError:
         raise
 
+async def relay_handler_output(handler):
+    try:
+        while chunk := await handler["process"].stdout.read(4096):
+            sys.stdout.write(chunk.decode(errors="replace"))
+            sys.stdout.flush()
+    except asyncio.CancelledError:
+        raise
+
 def split_first_token(line):
     lexer = shlex.shlex(line, posix=True)
     lexer.whitespace_split = True
@@ -3972,6 +3980,8 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                     process = await asyncio.create_subprocess_exec(
                         *shlex.split(cmd, posix=True),
                         stdin=asyncio.subprocess.PIPE,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
                     )
                     handler = {}
                     LAST_HANDLER_ID = LAST_HANDLER_ID + 1
@@ -3982,6 +3992,8 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                     handler["queue"] = asyncio.Queue(maxsize=HANDLER_QUEUE_SIZE)
                     handler["closed"] = False
                     handler["writer_task"] = asyncio.create_task(write_handler(handler))
+                    handler["output_task"] = asyncio.create_task(
+                        relay_handler_output(handler))
                     HANDLERS[htype][LAST_HANDLER_ID] = handler
                     if json_output:
                         output_str += json.dumps(handler, default=str)+end
@@ -4004,11 +4016,13 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 handlers = HANDLERS["msgs"]|HANDLERS["rxlog"]
                 handler = handlers[nb]
                 handler["closed"] = True
-                handler["writer_task"].cancel()
-                try:
-                    await handler["writer_task"]
-                except asyncio.CancelledError:
-                    pass
+                for task_name in ("writer_task", "output_task"):
+                    handler[task_name].cancel()
+                for task_name in ("writer_task", "output_task"):
+                    try:
+                        await handler[task_name]
+                    except asyncio.CancelledError:
+                        pass
                 handler["process"].stdin.close()
                 try:
                     await asyncio.wait_for(handler["process"].wait(), timeout=5)
