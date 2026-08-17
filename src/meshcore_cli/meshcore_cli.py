@@ -41,6 +41,16 @@ MCCLI_CONFIG_DIR = os.path.expanduser("~/.config/meshcore/")
 MCCLI_ADDRESS = MCCLI_CONFIG_DIR + "default_address"
 MCCLI_HISTORY_FILE = MCCLI_CONFIG_DIR + "history"
 MCCLI_INIT_SCRIPT = MCCLI_CONFIG_DIR + "init"
+MCCLI_SCOPES_FILE = MCCLI_CONFIG_DIR + "scopes"
+
+# Per channel scope overrides, one "<channel name> <scope>" per line.
+SCOPES = {}
+if os.path.exists(MCCLI_SCOPES_FILE) :
+    with open(MCCLI_SCOPES_FILE, "r") as lines:
+        for line in lines:
+            line = line.strip()
+            channel, scope = line.split()
+            SCOPES[channel] = scope
 
 PAYLOAD_TYPENAMES = ["REQ", "RESPONSE", "TEXT_MSG", "ACK", "ADVERT", "GRP_TXT", "GRP_DATA", "ANON_REQ", "PATH", "TRACE", "MULTIPART", "CONTROL"]
 ROUTE_TYPENAMES = ["TC_FLOOD", "FLOOD", "DIRECT", "TC_DIRECT"]
@@ -1258,6 +1268,8 @@ async def process_line(mc, line, contact=None, scope="*", prev_contact=None, pre
         if '%' in dest and scope!=None :
             dest_scope = dest.split("%")[-1]
             dest = dest[:-len(dest_scope)-1]
+        elif dest in SCOPES.keys():
+            dest_scope = SCOPES[dest]
         nc = await get_contact_from_arg(mc, dest)
         if nc is None:
             if dest == "public" :
