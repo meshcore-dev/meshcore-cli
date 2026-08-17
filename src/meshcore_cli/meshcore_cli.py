@@ -150,6 +150,29 @@ def split_first_token(line):
 
     return target, command
 
+def strip_outer_quotes(text):
+    if len(text) >= 2 and text[0] in ("'", '"') and text[-1] == text[0]:
+        return text[1:-1]
+    return text
+
+def split_pipeline(pipeline):
+    lines, buf, quote = [], [], None
+    for c in pipeline:
+        if quote:
+            buf.append(c)
+            if c == quote:
+                quote = None
+        elif c in ('"', "'"):
+            quote = c
+            buf.append(c)
+        elif c == "|":
+            lines.append("".join(buf).strip())
+            buf = []
+        else:
+            buf.append(c)
+    lines.append("".join(buf).strip())
+    return lines
+
 def escape_ansi(line):
     ansi_escape = re.compile(r'(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]')
     return ansi_escape.sub('', line)
@@ -1176,8 +1199,7 @@ async def process_redirected_line(mc, line, contact=None, scope="*", prev_contac
 
 async def process_pipeline(mc, pipeline, contact=None, scope="*", prev_contact=None, prev_scope="*", json_output=False, sink=sys.stdout, end="\n"):
 
-    pattern = r"""(?:\\.|"[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*'|[^|"\'])+"""
-    lines = [match.group(0).strip() for match in re.finditer(pattern, pipeline)]
+    lines = split_pipeline(pipeline)
 
     last_ack = True
     for line in lines:
@@ -1327,16 +1349,15 @@ async def process_line(mc, line, contact=None, scope="*", prev_contact=None, pre
 
         elif line.startswith("send") or line.startswith("\"") :
             if line.startswith("send") :
-                line = line[5:]
-            if line.startswith("\"") :
-                line = line[1:]
+                line = line[5:].strip()
+            line = strip_outer_quotes(line)
             last_ack = await msg_ack(mc, contact, line)
 
         elif contact["type"] == 0 : # channel, send msg to channel
-            await send_chan_msg(mc, contact["chan_nb"], line)
+            await send_chan_msg(mc, contact["chan_nb"], strip_outer_quotes(line))
 
         elif contact["type"] == 1 : # chat, send to recipient and wait ack
-            last_ack = await msg_ack(mc, contact, line)
+            last_ack = await msg_ack(mc, contact, strip_outer_quotes(line))
 
         elif contact["type"] == 2 or\
              contact["type"] == 3 or\
@@ -1636,7 +1657,10 @@ async def process_contact_chat_line(mc, contact, line, inside=False, json_output
                 cmds[0] == "cf" or cmds[0] == "change_flags" or\
                 cmds[0] == "req_binary" or\
                 cmds[0] == "login" :
-            args = [cmds[0], contact['adv_name'], cmds[1]]
+            text = cmds[1]
+            if cmds[0] == "msg":
+                text = strip_outer_quotes(text)
+            args = [cmds[0], contact['adv_name'], text]
             await process_cmds(mc, args, json_output=json_output, sink=sink)
             return True
 
@@ -1773,10 +1797,8 @@ async def apply_command_to_contacts(mc, contact_filter, line, json_output=False,
 
                 elif line.startswith("send") or line.startswith("\"") :
                     if line.startswith("send") :
-                        line = line[5:]
-                    if line.startswith("\"") :
-                        line = line[1:]
-                    await msg_ack(mc, contact, line)
+                        line = line[5:].strip()
+                    await msg_ack(mc, contact, strip_outer_quotes(line))
 
                 elif contact["type"] == 2 or\
                      contact["type"] == 3 or\
