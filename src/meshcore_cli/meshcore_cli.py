@@ -1298,16 +1298,21 @@ async def process_line(mc, line, contact=None, scope="*", prev_contact=None, pre
                     nc = {"adv_name": chan["channel_name"],
                           "type": 0,
                           "chan_nb": chan["channel_idx"],}
+        if not contact is None and dest_scope is None \
+                and contact["adv_name"] in SCOPES and scope == SCOPES[contact["adv_name"]]:
+            # if the scope was associated with that channel
+            # then reset scope to default
+            dest_scope = ""
+        if dest_scope is None: # still None ... keep it as it was
+            dest_scope = scope
+        if not scope is None and dest_scope != scope: # has scope changed
+            prev_scope = scope
+            if not dest_scope is None:
+                scope = await set_scope(mc, dest_scope)
         if nc != contact :
             last_ack = True
             prev_contact = contact
             contact = nc
-        if dest_scope is None:
-            dest_scope = scope
-        if not scope is None and dest_scope != scope:
-            prev_scope = scope
-            if not dest_scope is None:
-                scope = await set_scope(mc, dest_scope)
 
     elif line == "to" or line == "/to" :
         if contact is None :
