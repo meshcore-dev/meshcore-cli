@@ -1242,6 +1242,9 @@ async def process_line(mc, line, contact=None, scope="*", prev_contact=None, pre
 
     line = line.rstrip("\r\n")
 
+    if line in ["~", "/"]:
+        line = "/to ~"
+
     if line.startswith("/scope") or\
             line.startswith("scope") and contact is None:
         if not scope is None:
