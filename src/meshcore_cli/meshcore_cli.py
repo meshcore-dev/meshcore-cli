@@ -34,7 +34,7 @@ except ImportError:
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.6.1"
+VERSION = "v1.6.2"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = os.path.expanduser("~/.config/meshcore/")
@@ -1348,7 +1348,10 @@ async def process_line(mc, line, contact=None, scope="*", prev_contact=None, pre
     # commands are passed through if at root
     elif contact is None or line.startswith(".") :
         try:
-            args = shlex.split(line, posix=True)
+            if line.startswith(":"):
+                args = ["cli", line[1:].strip()]
+            else:
+                args = shlex.split(line, posix=True)
             await process_cmds(mc, args, json_output=json_output, sink=sink,end=end)
         except ValueError:
             logger.error(f"Error processing {line}")
@@ -3884,6 +3887,17 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                     output_str += json.dumps(res.payload, indent=4)+end
                 else:
                     output_str += f"Advert sent{end}"
+
+            case "cli":
+                argnum = 1
+                res = await mc.commands.run_cli_command(cmds[1])
+                logger.debug(res)
+                if res.type == EventType.ERROR:
+                    output_str += f"Error sending cli command: {res}{end}"
+                elif json_output:
+                    output_str += json.dumps(res.payload) + end
+                else:
+                    output_str += res.payload['text'] + end
 
             case "flood_advert" | "floodadv":
                 res = await mc.commands.send_advert(flood=True)
