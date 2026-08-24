@@ -175,8 +175,16 @@ def strip_outer_quotes(text):
 
 def split_pipeline(pipeline):
     lines, buf, quote = [], [], None
+    escaped = False
+
     for c in pipeline:
-        if quote:
+        if escaped:
+            buf.append(c)
+            escaped = False
+        elif c == "\\" and quote != "'":
+            buf.append(c)
+            escaped = True
+        elif quote:
             buf.append(c)
             if c == quote:
                 quote = None
