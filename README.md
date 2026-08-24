@@ -118,6 +118,8 @@ Commands are given after arguments, they can be chained and some have shortcuts.
     clock                  : get current time
     clock sync             : sync device clock                      st
     node_discover &lt;filter&gt; : discovers nodes based on their type    nd
+    cli &lt;cmd&gt;              : executes cli command cmd
+    send_raw &lt;pkt&gt;         : sends a raw packet (hex string)
   Contacts
     contacts / list        : gets contact list                      lc
     reload_contacts        : force reloading all contacts           rc

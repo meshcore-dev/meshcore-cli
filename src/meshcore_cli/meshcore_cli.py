@@ -114,6 +114,9 @@ HANDLERS = { # dicts that will be indexed by numbers
 LAST_HANDLER_ID = 0
 HANDLER_QUEUE_SIZE = 100
 
+# is the companion supposed to have cli
+HAS_CLI_CMD = False
+
 def enqueue_handler_event(handler_type, payload):
     message = json.dumps(payload) + "\n"
     for handler in HANDLERS[handler_type].values():
@@ -566,6 +569,7 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
         "infos" : None,
         "advert" : None,
         "floodadv" : None,
+        "cli" : None,
         "msg" : contact_list,
         "wait_ack" : None,
         "time" : None,
@@ -618,7 +622,7 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
         "apply_to": None,
         "at": None,
         "scope": None,
-        "shell": None,
+        "send_raw": None,
         "set" : {
             "name" : None,
             "pin" : None,
@@ -1356,7 +1360,7 @@ async def process_line(mc, line, contact=None, scope="*", prev_contact=None, pre
             else:
                 args = shlex.split(line, posix=True)
                 res = await process_cmds(mc, args, json_output=json_output, sink=sink,end=end)
-                if not res: # if command was not found, try cli
+                if not res and HAS_CLI_CMD: # if command was not found, try cli
                     args = ["cli", line[1:].strip()]
                     res = await process_cmds(mc, args, json_output=json_output, sink=sink,end=end)
             if not res :
@@ -2226,6 +2230,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                     if res.payload["fw ver"] >= 3:
                         output_str += f" Model: {res.payload['model']}\n"
                         output_str += f" Version: {res.payload['ver']}\n"
+                        output_str += f" Comp. radio protocol: {res.payload['fw ver']}\n"
                         output_str += f" Build date: {res.payload['fw_build']}\n"
                         if "repeat" in res.payload :
                             output_str += f" Repeat: {'on' if res.payload['repeat'] else 'off'}{end}"
@@ -3905,6 +3910,13 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 else:
                     output_str += res.payload['text'] + end
 
+            case "send_raw":
+                argnum = 1
+                res = await mc.commands.send_raw_packet(cmds[1])
+                logger.debug(res)
+                if res.type == EventType.ERROR:
+                    output_str += f"Error sending raw packet [{cmds[1]}]: {res}{end}"
+
             case "flood_advert" | "floodadv":
                 res = await mc.commands.send_advert(flood=True)
                 logger.debug(res)
@@ -4207,6 +4219,8 @@ def command_help():
     clock                  : get current time
     clock sync             : sync device clock                      st
     node_discover <filter> : discovers nodes based on their type    nd
+    cli <cmd>              : executes cli command cmd
+    send_raw <pkt>         : sends a raw packet (hex string)
   Contacts
     contacts / list        : gets contact list                      lc
     reload_contacts        : force reloading all contacts           rc
@@ -4984,6 +4998,7 @@ async def repeater_loop(ser):
 
 async def main(argv):
     """ Do the job """
+    global HAS_CLI_CMD
     json_output = JSON
     debug = False
     address = ADDRESS
@@ -5249,8 +5264,10 @@ async def main(argv):
     if (json_output or quiet) :
         logger.setLevel(logging.ERROR)
     else :
+        if res.payload["fw ver"] >= 14 :
+            HAS_CLI_CMD = True
         if res.payload["fw ver"] > 2 :
-            logger.info(f"Connected to {mc.self_info['name']} running on a {res.payload['ver']} fw.")
+            logger.info(f"Connected to {mc.self_info['name']} running on a {res.payload['ver']} ({res.payload['fw ver']}) fw.")
         else :
             logger.info(f"Connected to {mc.self_info['name']}.")
 
