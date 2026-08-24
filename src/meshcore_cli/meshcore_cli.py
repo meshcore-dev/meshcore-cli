@@ -1234,7 +1234,9 @@ async def process_line(mc, line, contact=None, scope="*", prev_contact=None, pre
     if line.startswith("$$") :
         try :
             args = shlex.split(line[2:], posix=True)
-            await process_cmds(mc, args, json_output=json_output, sink=sink)
+            res = await process_cmds(mc, args, json_output=json_output, sink=sink)
+            if not res:
+                logger.error(f"Problem while executing {args}")
         except ValueError:
             logger.error(f"Error parsing line {line[1:]}")
 
@@ -1350,9 +1352,15 @@ async def process_line(mc, line, contact=None, scope="*", prev_contact=None, pre
         try:
             if line.startswith(":"):
                 args = ["cli", line[1:].strip()]
+                res = await process_cmds(mc, args, json_output=json_output, sink=sink,end=end)
             else:
                 args = shlex.split(line, posix=True)
-            await process_cmds(mc, args, json_output=json_output, sink=sink,end=end)
+                res = await process_cmds(mc, args, json_output=json_output, sink=sink,end=end)
+                if not res: # if command was not found, try cli
+                    args = ["cli", line[1:].strip()]
+                    res = await process_cmds(mc, args, json_output=json_output, sink=sink,end=end)
+            if not res :
+                logger.error(f"Problem while running {args}")
         except ValueError:
             logger.error(f"Error processing {line}")
 
@@ -1374,7 +1382,10 @@ async def process_line(mc, line, contact=None, scope="*", prev_contact=None, pre
             if line.startswith("send") :
                 line = line[5:].strip()
             line = strip_outer_quotes(line)
-            last_ack = await msg_ack(mc, contact, line)
+            if contact["type"] == 0 : # channel, send msg to channel
+                await send_chan_msg(mc, contact["chan_nb"], strip_outer_quotes(line))
+            else:
+                last_ack = await msg_ack(mc, contact, line)
 
         elif contact["type"] == 0 : # channel, send msg to channel
             await send_chan_msg(mc, contact["chan_nb"], strip_outer_quotes(line))
@@ -3025,14 +3036,9 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 argnum = 2
                 dest = None
 
-                if len(cmds[1]) >= 12: # possibly an hex prefix
-                    try:
-                        dest = bytes.fromhex(cmds[1])
-                    except ValueError:
-                        dest = None
-
-                if dest is None:
-                    dest = await get_contact_from_arg(mc, cmds[1])
+                # force getting contacts, as we don't know the type
+                # might add rpt_cmd that assumes the contact is a repeater
+                dest = await get_contact_from_arg(mc, cmds[1])
 
                 if dest is None:
                     if json_output :
@@ -3682,7 +3688,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                     else:
                         output_str += f"Unknown contact {cmds[1]}{end}"
                 else:
-                    res = await mc.commands.change_contact_flags(contact, int(cmds[2]))
+                    res = await mc.commands.change_contact_flags(contact, int(cmds[2], 0))
                     logger.debug(res)
                     if res.type == EventType.ERROR:
                         output_str += f"Error setting path: {res}{end}"
@@ -4101,7 +4107,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 pass
 
             case _ :
-                logger.error(f"Unknown command : {cmd}, {cmds} not executed ...")
+                logger.debug(f"Unknown command : {cmd}, {cmds} not executed ...")
                 return (None, output_str)
 
         logger.debug(f"cmd {cmds[0:argnum+1]} processed ...")
@@ -4109,14 +4115,14 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
 
     except IndexError:
         logger.error("Error in parameters")
-        return (None, "")
+        return ([], "")
     except (EOFError, KeyboardInterrupt):
         logger.error("Cancelled")
-        return (None, "")
+        return ([], "")
     except Exception as e:
         logger.error(f"Unexpected error while processing '{cmds[0]}': {e}")
         logger.debug(traceback.format_exc())
-        return (None, "")
+        return ([], "")
 
 async def process_cmds (mc, cmds, json_output=False, sink=sys.stdout, end="\n") :
     while cmds and len(cmds) > 0 :
@@ -4124,7 +4130,9 @@ async def process_cmds (mc, cmds, json_output=False, sink=sys.stdout, end="\n") 
         if not cur_output is None:
             sink.write(cur_output)
             sink.flush()
-    return
+        if cmds is None:
+            return False
+    return True
 
 async def process_script(mc, file, json_output=False, sink=sys.stdout):
     output_str = ""
@@ -4148,7 +4156,9 @@ async def process_script(mc, file, json_output=False, sink=sys.stdout):
             logger.debug(f"processing {line}")
             try :
                 cmds = shlex.split(line, posix=True)
-                await process_cmds(mc, cmds, json_output=json_output, sink=sink)
+                res = await process_cmds(mc, cmds, json_output=json_output, sink=sink)
+                if not res:
+                    logger.error(f"Problem executing {cmds}")
             except ValueError:
                 logger.error(f"Error processing {line}")
     return output_str
@@ -5259,7 +5269,9 @@ async def main(argv):
         if args[-1] == "interactive" or args[-1] == "chat" or args[-1] == "im":
             force_interactive = True
              
-        await process_cmds(mc, args, json_output=json_output, sink=sys.stdout)
+        res = await process_cmds(mc, args, json_output=json_output, sink=sys.stdout)
+        if not res :
+            logger.error(f"Problem while executing {args}")
 
     if len(args) == 0 or force_interactive :
         await interactive_loop(mc, json_output=json_output)
