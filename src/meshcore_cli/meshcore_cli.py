@@ -4,7 +4,7 @@
 """
 
 import asyncio
-import os, sys, io, platform
+import os, sys, io, platform, shutil
 import string
 import time, datetime
 import getopt, json, shlex, re
@@ -34,7 +34,7 @@ except ImportError:
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.6.2"
+VERSION = "v1.6.3"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = os.path.expanduser("~/.config/meshcore/")
@@ -48,9 +48,14 @@ SCOPES = {}
 if os.path.exists(MCCLI_SCOPES_FILE) :
     with open(MCCLI_SCOPES_FILE, "r") as lines:
         for line in lines:
-            line = line.strip()
-            channel, scope = line.split()
-            SCOPES[channel] = scope
+            try:
+                line = line.strip()
+                if line == "" or line.startswith(";"):
+                    continue
+                channel, scope = line.split()
+                SCOPES[channel] = scope
+            except ValueError as e:
+                logger.error(f"while reading scope file {MCCLI_SCOPES_FILE}: {e} ... proceeding")
 
 PAYLOAD_TYPENAMES = ["REQ", "RESPONSE", "TEXT_MSG", "ACK", "ADVERT", "GRP_TXT", "GRP_DATA", "ANON_REQ", "PATH", "TRACE", "MULTIPART", "CONTROL"]
 ROUTE_TYPENAMES = ["TC_FLOOD", "FLOOD", "DIRECT", "TC_DIRECT"]
@@ -330,7 +335,7 @@ async def handle_log_rx(event):
                     message = "-- unhandled --"
 
             if chan_name != "" :
-                width = os.get_terminal_size().columns
+                width = shutil.get_terminal_size(fallback=(80, 24)).columns
                 cars = width - 13 - len(event.payload["path"]) - len(chan_name) - 1
                 dispmsg = message.replace("\n","")[0:cars]
                 txt = f"{ANSI_LIGHT_GRAY}{chan_name} {ANSI_DGREEN}{dispmsg+(cars-len(dispmsg))*' '} {ANSI_START}{width-11-len(event.payload['path'])}G{ANSI_YELLOW}[{event.payload['path']}]{ANSI_LIGHT_GRAY}{event.payload['snr']:6,.2f}{event.payload['rssi']:4}{ANSI_END}"
@@ -1361,7 +1366,7 @@ async def process_line(mc, line, contact=None, scope="*", prev_contact=None, pre
                 args = shlex.split(line, posix=True)
                 res = await process_cmds(mc, args, json_output=json_output, sink=sink,end=end)
                 if not res and HAS_CLI_CMD: # if command was not found, try cli
-                    args = ["cli", line[1:].strip()]
+                    args = ["cli", line.strip()]
                     res = await process_cmds(mc, args, json_output=json_output, sink=sink,end=end)
             if not res :
                 logger.error(f"Problem while running {args}")
@@ -2259,12 +2264,13 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                         output_str += f"Time synced{end}"
                 else:
                     res = await mc.commands.get_time()
-                    timestamp = res.payload["time"]
-                    if res.type == EventType.ERROR:
+                    if res is None or res.type == EventType.ERROR:
                         output_str += f"Error getting time: {res}{end}"
                     elif json_output :
+                        timestamp = res.payload["time"]
                         output_str += json.dumps(res.payload, indent=4)+end
                     else :
+                        timestamp = res.payload["time"]
                         output_str += 'Current time :'\
                             + f' {datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")}'\
                             + f' ({timestamp})'\
@@ -2903,13 +2909,13 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
             case "self_telemetry" | "t":
                 res = await mc.commands.get_self_telemetry()
                 logger.debug(res)
-                if res.type == EventType.ERROR:
-                    output_str += f"Error while requesting telemetry{end}"
-                elif res is None:
+                if res is None:
                     if json_output :
                         output_str += json.dumps({"error" : "Timeout waiting telemetry"})+end
                     else:
                         output_str += "Timeout waiting telemetry" + end
+                elif res.type == EventType.ERROR:
+                    output_str += f"Error while requesting telemetry{end}"
                 else :
                     output_str += json.dumps(res.payload, indent=4)+end
 
@@ -3467,7 +3473,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                         if json_output:
                             output_str += json.dumps(res, indent=4)+end
                         else:
-                            width = os.get_terminal_size().columns
+                            width = shutil.get_terminal_size(fallback=(80, 24)).columns
                             output_str += f"Got {res['results_count']} neighbours out of {res['neighbours_count']} from {contact['adv_name']}:\n"
                             first = True
                             for n in res['neighbours']:
@@ -4020,9 +4026,9 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 else:
                     file_name = await prompt_for_file()
 
-                file_name = file_name.strip()
-                fn = file_name
                 if not file_name is None:
+                    file_name = file_name.strip()
+                    fn = file_name
                     file_name = os.path.expanduser(file_name)
                     if not os.path.exists(file_name) :
                         if os.path.exists(MCCLI_CONFIG_DIR + file_name) :
@@ -5261,11 +5267,12 @@ async def main(argv):
     if os.path.isdir(MCCLI_CONFIG_DIR) :
         log_message.file = MCCLI_CONFIG_DIR + (mc.self_info["name"].replace("/","")) + ".msgs"
 
+    if res.payload["fw ver"] >= 14 :
+        HAS_CLI_CMD = True
+
     if (json_output or quiet) :
         logger.setLevel(logging.ERROR)
     else :
-        if res.payload["fw ver"] >= 14 :
-            HAS_CLI_CMD = True
         if res.payload["fw ver"] > 2 :
             logger.info(f"Connected to {mc.self_info['name']} running on a {res.payload['ver']} ({res.payload['fw ver']}) fw.")
         else :
