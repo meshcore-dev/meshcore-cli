@@ -3538,7 +3538,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 if json_output :
                     output_str += json.dumps(res, indent=4) + end
                 else :
-                    for c in res.items():
+                    for c in sorted(res.items(), key=lambda i: i[1]["adv_name"].lower()):
                         if c[1]['out_path_len'] == -1:
                             path_str = "Flood"
                         elif c[1]['out_path_len'] == 0:
