@@ -5027,6 +5027,10 @@ async def main(argv):
     first_device = False
     quiet = False
     force_interactive = False
+
+    # basic logger configuration (was removed from meshcore_py)
+    logging.basicConfig(level=logging.INFO)
+
     # If there is an address in config file, use it by default
     # unless an arg is explicitely given
     if os.path.exists(MCCLI_ADDRESS) :
