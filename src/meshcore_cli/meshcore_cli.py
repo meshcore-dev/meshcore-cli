@@ -607,6 +607,7 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
         "change_path" : contact_list,
         "change_flags" : contact_list,
         "remove_contact" : contact_list,
+        "add_contact" : {"key type name":None},
         "import_contact" : {"meshcore://":None},
         "reload_contacts" : None,
         "aliases" : None,
@@ -737,6 +738,7 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
         "?change_path":None,
         "?trace":None,
         "?alias":None,
+        "?add_contact":None
     }
 
     contact_completion_list = {
@@ -3669,6 +3671,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                         output_str += f"Error adding contact: {res}{end}"
                     elif json_output :
                         output_str += json.dumps(res.payload, indent=4)+end
+                    await mc.commands.get_contacts() # reload contacts
                 except ValueError:
                     output_str += f"Error ! Command format add_contact key type name{end}"
 
@@ -4244,6 +4247,7 @@ def command_help():
     export_contact <ct>    : get a contact's URI                    ec
     import_contact <URI>   : import a contact from its URI          ic
     remove_contact <ct>    : removes a contact from this node
+    add_contact <k> <t> <n>: adds contact: key type name
     path <ct>              : diplays path for a contact
     disc_path <ct>         : discover new path and display          dp
     reset_path <ct>        : resets path to a contact to flood      rp
@@ -4434,7 +4438,7 @@ Managing Flood Scope in interactive mode
         - contact_type (ct)
 """)
 
-    elif cmdname == "pending_contacts" or cmdname == "flush_pending" or cmdname == "add_pending" or cmdname == "autoadd":
+    elif cmdname == "pending_contacts" or cmdname == "flush_pending" or cmdname == "add_pending" or cmdname == "autoadd" or cmdname == "add_contact":
         print("""Contact management
 
 To receive a message from another user, it is necessary to have its public key. This key is stored on a contact list in the device, and this list has a finite size (50 when meshcore started, now over 350 for most devices).
@@ -4457,6 +4461,8 @@ You can also set autoadd_config flag to filter contacts that are automatically a
 #define AUTO_ADD_SENSOR           (1 << 4)  // 0x10 - auto-add Sensor (ADV_TYPE_SENSOR)
 
 Instead of an int you can use can make a string containing keys which can be (ov, cli, rep, room or sen), parser will look for keys in the string.
+
+Contacts can also be added manually by using `add_contact` command, which takes key, type and name as parameters.
 
 Note: There is also an auto_update_contacts setting that has nothing to do with adding contacts, it permits to automatically sync contact lists between device and meshcore-cli (when there is an update in name, location or path).
 """)
