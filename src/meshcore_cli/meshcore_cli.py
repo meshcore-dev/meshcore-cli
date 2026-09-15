@@ -122,6 +122,25 @@ HANDLER_QUEUE_SIZE = 100
 # is the companion supposed to have cli
 HAS_CLI_CMD = False
 
+# for sorting and filtering in lc could be used elsewhere
+SORTING_CRITERIA = {
+    "a": (lambda x: x.get("adv_name", ""), False),
+    "A": (lambda x: x.get("adv_name", ""), True),
+    "n": (lambda x: x.get("adv_name", ""), False),
+    "N": (lambda x: x.get("adv_name", ""), True),
+    "t": (lambda x: x.get("lastmod" , 0), False),
+    "T": (lambda x: x.get("lastmod" , 0), True),
+    "f": (lambda x: bool(x.get("flags" , 0) & 1), True),
+    "F": (lambda x: bool(x.get("flags" , 0) & 1), False),
+}
+
+TYPE_MAP = {
+    "1": 1, "c": 1, # client
+    "2": 2, "r": 2, # repeater
+    "3": 3, "o": 3, # room
+    "4": 4, "s": 4, # sensor
+}
+
 def enqueue_handler_event(handler_type, payload):
     message = json.dumps(payload) + "\n"
     for handler in HANDLERS[handler_type].values():
@@ -3535,32 +3554,77 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                         output_str += json.dumps(res)+end
 
             case "contacts" | "list" | "lc" | "reload_contacts" | "rc" :
+                argnum = 0
+
                 if cmd == "rc" or cmd == "reload_contacts" :
                     await mc.commands.get_contacts()
                 else:
                     await mc.ensure_contacts(follow=True)
+
+                sort_order = "" # alpha timestamp favorite_first reverse distance
+                display_types = []
+                filter_flag = 0
+                output_format = "ntkh" # name type key hops
+
+                args = cmds[1:]
+                while len(args) > 0 and args[0][0] == "-":
+                    argnum += 1
+                    a = args[0][1:]
+                    if a[0] == "s": # sorting options
+                        sort_order = a[1:]
+
+                    elif a[0] == "f": # output format
+                        output_format = a[1:]
+
+                    elif a[0] == "t": # type
+                        display_types = {TYPE_MAP[t] for t in a[1] if t in TYPE_MAP}
+
+                    elif a[0] == "b": # flag
+                        filter_flag = int(a[1:], 0)
+
+                    args=args[1:]
+
                 res = mc.contacts
-                if json_output :
-                    output_str += json.dumps(res, indent=4) + end
+                ct = list(res.values())
+
+                if filter_flag > 0:
+                    ct = [x for x in ct if x.get("flags", 0) & filter_flag]
+
+                if display_types != []:
+                   ct = [x for x in ct if x.get("type") in display_types]
+
+                for s in reversed(sort_order):
+                    if s not in SORTING_CRITERIA:
+                        continue
+                    keyfunc, reverse = SORTING_CRITERIA[s]
+                    ct.sort(key=keyfunc, reverse=reverse)
+
+                if json_output : # json output historically prints the whole dict ...
+                                 # if there were no args, print the dict else the list
+                    if argnum == 0:
+                        output_str += json.dumps(res, indent=4) + end
+                    else:
+                        output_str += json.dumps(ct, indent=4) + end
                 else :
-                    for c in res.items():
-                        if c[1]['out_path_len'] == -1:
+
+                    for c in ct:
+                        if c['out_path_len'] == -1:
                             path_str = "Flood"
-                        elif c[1]['out_path_len'] == 0:
+                        elif c['out_path_len'] == 0:
                             path_str = "0 hop"
                         else:
-                            phs = c[1]['out_path_hash_mode'] + 1
-                            plen = c[1]['out_path_len']
-                            path_str_in = c[1]['out_path']
+                            phs = c['out_path_hash_mode'] + 1
+                            plen = c['out_path_len']
+                            path_str_in = c['out_path']
                             path_str = path_str_in[:2*phs]
                             for i in range(1,plen):
                                 path_str = path_str + "," + path_str_in[i*phs*2:(i+1)*2*phs]
                             #path_str = f"{c[1]['out_path']}:{c[1]['out_path_hash_mode']}"
-                        output_str += f"{c[1]['adv_name']:30} "
+                        output_str += f"{c['adv_name']:30} "
                         output_str += f"{ANSI_START}34G"
-                        output_str += f"{CONTACT_TYPENAMES[c[1]['type']]:4}  "
-                        output_str += f"{c[1]['public_key'][:12]}  {path_str}\n"
-                    output_str += f"> {len(mc.contacts)} contacts in device{end}"
+                        output_str += f"{CONTACT_TYPENAMES[c['type']]:4}  "
+                        output_str += f"{c['public_key'][:12]}  {path_str}\n"
+                    output_str += f"> {len(ct)} from {len(mc.contacts)} contacts in device{end}"
 
             case "pending_contacts":
                 if json_output:
