@@ -3569,6 +3569,9 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 args = cmds[1:]
                 while len(args) > 0 and args[0][0] == "-":
                     argnum += 1
+                    if len(args[0]) <= 1: # just a dash
+                        args=args[1:]
+                        continue
                     a = args[0][1:]
                     if a[0] == "s": # sorting options
                         sort_order = a[1:]
