@@ -4294,7 +4294,9 @@ def command_usage() :
     -P              : forces pairing via the OS
     -t <hostname>   : connects via tcp/ip
     -p <port>       : specifies tcp port (default 5000)
-    -s <port>       : use serial port <port>
+    -s <port>[:opts]: use serial port <port>
+                        opts are comma separated options
+                            rts=, dts=, baud=
     -b <baudrate>   : specify baudrate
     -C              : toggles classic mode for prompt
     -c <on/off>     : disables most of color output if off
@@ -5027,6 +5029,8 @@ async def main(argv):
     first_device = False
     quiet = False
     force_interactive = False
+    serial_dtr = True
+    serial_rts = False
 
     # basic logger configuration (was removed from meshcore_py)
     logging.basicConfig(level=logging.INFO)
@@ -5061,6 +5065,26 @@ async def main(argv):
             case "-P" : # pairing
                 pin = True
             case "-s" : # serial port
+                if ":" in arg:
+                    serial_opts=arg.split(":",1)[1].split(',')
+                    arg=arg.split(":")[0]
+                    for opt in serial_opts:
+                        try:
+                            name = opt.split('=')[0].lower().strip()
+                            if name == 'dtr':
+                                val = opt.split('=')[1].lower()
+                                serial_dtr = True if val == 'true' or val == '1' or val == 'on' else False
+                            elif name == 'rts':
+                                val = opt.split('=')[1].lower()
+                                serial_rts = True if val == 'true' or val == '1' or val == 'on' else False
+                            elif name == 'baudrate' or name == 'baud' or name == 'b':
+                                baudrate = int(opt.split('=')[1])
+                            else:
+                                logger.error(f"Unrecognized serial option {opt}")
+                        except ValueError as e:
+                            logger.error(f"Bad option format {opt}: {e}")
+                        except IndexError as e:
+                            logger.error(f"Bad option format {opt}: {e}")
                 serial_port = arg
             case "-b" :
                 baudrate = int(arg)
@@ -5169,7 +5193,7 @@ async def main(argv):
     if not hostname is None : # connect via tcp
         mc = await MeshCore.create_tcp(host=hostname, port=port, debug=debug, only_error=json_output)
     elif not serial_port is None : # connect via serial port
-        mc = await MeshCore.create_serial(port=serial_port, baudrate=baudrate, debug=debug, only_error=json_output)
+        mc = await MeshCore.create_serial(port=serial_port, baudrate=baudrate, debug=debug, only_error=json_output, dtr=serial_dtr, rts=serial_rts)
         if mc is None: # did not connect
             logger.error("To connect to a repeater, use -r option.")
     elif BLEAK_AVAILABLE : # connect via ble
