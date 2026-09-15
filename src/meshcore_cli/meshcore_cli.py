@@ -34,7 +34,7 @@ except ImportError:
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.6.3"
+VERSION = "v1.6.4"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = os.path.expanduser("~/.config/meshcore/")
@@ -3534,8 +3534,11 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                     else :
                         output_str += json.dumps(res)+end
 
-            case "contacts" | "list" | "lc":
-                await mc.ensure_contacts(follow=True)
+            case "contacts" | "list" | "lc" | "reload_contacts" | "rc" :
+                if cmd == "rc" or cmd == "reload_contacts" :
+                    await mc.commands.get_contacts()
+                else:
+                    await mc.ensure_contacts(follow=True)
                 res = mc.contacts
                 if json_output :
                     output_str += json.dumps(res, indent=4) + end
@@ -3557,16 +3560,6 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                         output_str += f"{ANSI_START}34G"
                         output_str += f"{CONTACT_TYPENAMES[c[1]['type']]:4}  "
                         output_str += f"{c[1]['public_key'][:12]}  {path_str}\n"
-                    output_str += f"> {len(mc.contacts)} contacts in device{end}"
-
-            case "reload_contacts" | "rc":
-                await mc.commands.get_contacts()
-                res = mc.contacts
-                if json_output :
-                    output_str += json.dumps(res, indent=4)+end
-                else :
-                    for c in res.items():
-                        output_str += c[1]["adv_name"]
                     output_str += f"> {len(mc.contacts)} contacts in device{end}"
 
             case "pending_contacts":
