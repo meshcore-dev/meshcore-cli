@@ -124,8 +124,8 @@ HAS_CLI_CMD = False
 
 # for sorting and filtering in lc could be used elsewhere
 SORTING_CRITERIA = {
-    "a": (lambda x: x.get("adv_name", ""), False),
-    "A": (lambda x: x.get("adv_name", ""), True),
+    "a": (lambda x: x.get("last_advert", 0), False),
+    "A": (lambda x: x.get("last_advert", 0), True),
     "n": (lambda x: x.get("adv_name", ""), False),
     "N": (lambda x: x.get("adv_name", ""), True),
     "t": (lambda x: x.get("lastmod" , 0), False),
