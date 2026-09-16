@@ -14,6 +14,7 @@ import serial.tools.list_ports
 from pathlib import Path
 import traceback
 import subprocess
+import math
 from prompt_toolkit.shortcuts import PromptSession
 from prompt_toolkit.shortcuts import CompleteStyle
 from prompt_toolkit.completion import NestedCompleter, PathCompleter
@@ -134,6 +135,8 @@ SORTING_CRITERIA = {
     "M": (lambda x: x.get("lastmod" , 0), True),
     "h": (lambda x: x.get("out_path_len" , 0), False),
     "H": (lambda x: x.get("out_path_len" , 0), True),
+    "d": (lambda x: x.get("distance" , 0), False),
+    "D": (lambda x: x.get("distance" , 0), True),
     "f": (lambda x: bool(x.get("flags" , 0) & 1), True),
     "F": (lambda x: bool(x.get("flags" , 0) & 1), False),
 }
@@ -164,6 +167,36 @@ def time_ago_from_timestamp (timestamp):
     else :
         time_ago = f"{int(duration)}s"
     return time_ago
+
+def haversine_distance(coord1, coord2):
+    # Radius of the Earth in kilometers (use 3958.8 for miles)
+    R = 6371.0 
+    
+    lat1, lon1 = coord1
+    lat2, lon2 = coord2
+    
+    # Convert latitude and longitude to radians
+    lat1_rad = math.radians(lat1)
+    lon1_rad = math.radians(lon1)
+    lat2_rad = math.radians(lat2)
+    lon2_rad = math.radians(lon2)
+    
+    # Differences
+    dlat = lat2_rad - lat1_rad
+    dlon = lon2_rad - lon1_rad
+    
+    # Haversine formula computation
+    a = (math.sin(dlat / 2) ** 2 + 
+         math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon / 2) ** 2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    
+    return R * c
+
+def distance_between(contact1, contact2):
+    # calculate distance between two contacts (can be mc.self_info)
+    coord1 = (contact1['adv_lat'], contact1['adv_lon'])
+    coord2 = (contact2['adv_lat'], contact2['adv_lon'])
+    return haversine_distance(coord1, coord2)
 
 def enqueue_handler_event(handler_type, payload):
     message = json.dumps(payload) + "\n"
@@ -3634,6 +3667,11 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 res = mc.contacts
                 ct = list(res.values())
 
+                if "d" in output_format.lower() or "d" in sort_order.lower():
+                    # calculate distance for each node (override previous val)
+                    for c in ct:
+                        c['distance'] = distance_between(mc.self_info, c)
+
                 if filter_flag > 0:
                     ct = [x for x in ct if x.get("flags", 0) & filter_flag]
 
@@ -3682,6 +3720,8 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                                 output_str += f" {time_ago_from_timestamp(c['lastmod']):>4}"
                             elif i == "b":
                                 output_str += f" {c['flags']:02x}"
+                            elif i == "d":
+                                output_str += f" {c['distance']:7.2f}km"
                         output_str += "\n"
                     output_str += f"> {len(ct)} from {len(mc.contacts)} contacts in device{end}"
 
@@ -3772,7 +3812,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                     "public_key": cmds[1],
                     "type" : int (cmds[2]),
                     "flags" : 0,
-                    "out_path_len" : 0,
+                    "out_path_len" : -1,
                     "out_path" : "",
                     "out_path_hash_mode" : 0,
                     "adv_name" : cmds[3],
@@ -4710,6 +4750,7 @@ Sort order is given as a string with different criterias (lowercase for ascendin
     a: sorts by last advert
     m: sorts by modification time
     h: sorts by path len
+    d: sorts by distance
     f: starts with favorites
 If several criteria are used, they are evaluated from right to left, so the leftmost one has more priority `-stfn` first sorts by name, then puts the favorites first and finally orders by type.
 Use get/set lc_sort_order to get or set default value
@@ -4720,6 +4761,7 @@ Output format is given as a string with one character by field. Name is always d
     a: last advert
     m: last modification
     h: hop count
+    d: distance (in km)
     b: flag bits (as hex)
 Use get/set lc_output_format to get or set default value
 """)
