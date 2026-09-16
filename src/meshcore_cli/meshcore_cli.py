@@ -128,8 +128,10 @@ SORTING_CRITERIA = {
     "A": (lambda x: x.get("last_advert", 0), True),
     "n": (lambda x: x.get("adv_name", ""), False),
     "N": (lambda x: x.get("adv_name", ""), True),
-    "t": (lambda x: x.get("lastmod" , 0), False),
-    "T": (lambda x: x.get("lastmod" , 0), True),
+    "m": (lambda x: x.get("lastmod" , 0), False),
+    "M": (lambda x: x.get("lastmod" , 0), True),
+    "h": (lambda x: x.get("out_path_len" , 0), False),
+    "H": (lambda x: x.get("out_path_len" , 0), True),
     "f": (lambda x: bool(x.get("flags" , 0) & 1), True),
     "F": (lambda x: bool(x.get("flags" , 0) & 1), False),
 }
@@ -140,6 +142,26 @@ TYPE_MAP = {
     "3": 3, "o": 3, # room
     "4": 4, "s": 4, # sensor
 }
+
+LC_DISPLAY_TYPES = [1, 2, 3, 4]
+LC_OUTPUT_FORMAT = "tkah"
+LC_SORT_ORDER = ""
+
+def time_ago_from_timestamp (timestamp):
+    duration = int(time.time()) - timestamp
+    if duration / 86400 >= 1 : # result in days
+        days_ago = int(duration/86400)
+        if days_ago >= 365:
+            time_ago = f"{int(days_ago/365)}y"
+        else:
+            time_ago = f"{days_ago}d"
+    elif duration / 3600 >= 1 : # result in days
+        time_ago = f"{int(duration/3600)}h"
+    elif duration / 60 >= 1 : # result in min
+        time_ago = f"{int(duration/60)}m"
+    else :
+        time_ago = f"{int(duration)}s"
+    return time_ago
 
 def enqueue_handler_event(handler_type, payload):
     message = json.dumps(payload) + "\n"
@@ -670,6 +692,8 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
             "print_timestamp" : {"on":None, "off": None, "%Y:%M":None},
             "json_msgs" : {"on":None, "off": None},
             "color" : {"on":None, "off":None},
+            "lc_output_format":None,
+            "lc_sort_order":None,
             "print_adverts" : {"on":None, "off":None},
             "json_log_rx" : {"on":None, "off":None},
             "channel_echoes" : {"on":None, "off":None},
@@ -706,6 +730,8 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
             "print_timestamp":None,
             "json_msgs":None,
             "color":None,
+            "lc_output_format":None,
+            "lc_sort_order":None,
             "print_adverts":None,
             "json_log_rx":None,
             "channel_echoes":None,
@@ -742,6 +768,7 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
         "?contact_info":None,
         "?apply_to":None,
         "?at":None,
+        "?lc":None,
         "?node_discover":None,
         "?nd":None,
         "?pending_contacts":None,
@@ -2235,6 +2262,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
         returns (following, output_str)
     """
     global ARROW_HEAD, SLASH_START, SLASH_END, INVERT_SLASH, LAST_HANDLER_ID
+    global LC_DISPLAY_TYPES, LC_OUTPUT_FORMAT, LC_SORT_ORDER
     output_str = ""
     try :
         argnum = 0
@@ -2348,6 +2376,10 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                     case "help" :
                         argnum = 1
                         get_help_for("set")
+                    case "lc_output_format":
+                        LC_OUTPUT_FORMAT=cmds[2]
+                    case "lc_sort_order":
+                        LC_SORT_ORDER=cmds[2]
                     case "max_flood_attempts":
                         msg_ack.max_flood_attempts=int(cmds[2])
                     case "max_attempts":
@@ -2634,6 +2666,16 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 match cmds[1]:
                     case "help":
                         get_help_for("get")
+                    case "lc_output_format":
+                        if json_output :
+                            output_str += json.dumps({"lc_output_format": LC_OUTPUT_FORMAT})+end
+                        else:
+                            output_str += f"lc_output_format: {LC_OUTPUT_FORMAT}{end}"
+                    case "lc_sort_order":
+                        if json_output :
+                            output_str += json.dumps({"lc_sort_order": LC_SORT_ORDER})+end
+                        else:
+                            output_str += f"lc_sort_order: \"{LC_SORT_ORDER}\"{end}"
                     case "max_flood_attempts":
                         if json_output :
                             output_str += json.dumps({"max_flood_attempts" : msg_ack.max_flood_attempts})+end
@@ -3561,10 +3603,10 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 else:
                     await mc.ensure_contacts(follow=True)
 
-                sort_order = "" # alpha timestamp favorite_first reverse distance
-                display_types = []
+                sort_order = LC_SORT_ORDER
+                display_types = LC_DISPLAY_TYPES
+                output_format = LC_OUTPUT_FORMAT
                 filter_flag = 0
-                output_format = "ntkh" # name type key hops
 
                 args = cmds[1:]
                 while len(args) > 0 and args[0][0] == "-":
@@ -3625,8 +3667,18 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                             #path_str = f"{c[1]['out_path']}:{c[1]['out_path_hash_mode']}"
                         output_str += f"{c['adv_name']:30} "
                         output_str += f"{ANSI_START}34G"
-                        output_str += f"{CONTACT_TYPENAMES[c['type']]:4}  "
-                        output_str += f"{c['public_key'][:12]}  {path_str}\n"
+                        for i in output_format.lower():
+                            if i == "t":
+                                output_str += f" {CONTACT_TYPENAMES[c['type']]:4}"
+                            elif i == "k":
+                                output_str += f" {c['public_key'][:12]}"
+                            elif i == "h":
+                                output_str += f" {path_str:12}"
+                            elif i == "a":
+                                output_str += f" {time_ago_from_timestamp(c['last_advert']):>4}"
+                            elif i == "m":
+                                output_str += f" {time_ago_from_timestamp(c['lastmod']):>4}"
+                        output_str += "\n"
                     output_str += f"> {len(ct)} from {len(mc.contacts)} contacts in device{end}"
 
             case "pending_contacts":
@@ -4637,6 +4689,32 @@ The alias command takes two parameters, alias name and value. Value can contain 
 You can list all aliases using `aliases` command and so using `.> <filename> aliases` will save the alias dict in a file (`alias` with no parameter will act as `aliases`).
 
 To recall an alias dict from a file use `aliases_load`, with a name it will try to load aliases from a file by the given name (searching also in mccli config dir), with no name it will prompt you for a file (with a file completer).
+""")
+
+    elif cmdname=="lc" or cmdname=="contacts" or cmdname=="list" :
+        print("""lc: displays contact list from the the node
+
+lc supports four parameters:
+  sort order    : -s
+  output format : -f
+  filter by type: -t
+  filter by flag: -b
+
+Sort order is given as a string with different criterias (lowercase for ascending, uppercse for descending order):
+    n: sorts by name
+    a: sorts by last advert
+    m: sorts by modification time
+    h: sorts by path len
+    f: starts with favorites
+Use get/set lc_sort_order to get or set default value
+
+Output format is given as a string with one character by field. Name is always displayed first but you can tailor the rest of the output:
+    t: type
+    k: key prefix
+    h: hop count
+    a: last advert
+    m: last modification
+Use get/set lc_output_format to get or set default value
 """)
 
     else:
