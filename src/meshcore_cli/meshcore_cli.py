@@ -128,6 +128,8 @@ SORTING_CRITERIA = {
     "A": (lambda x: x.get("last_advert", 0), True),
     "n": (lambda x: x.get("adv_name", ""), False),
     "N": (lambda x: x.get("adv_name", ""), True),
+    "t": (lambda x: x.get("type" , 0), False),
+    "T": (lambda x: x.get("type" , 0), True),
     "m": (lambda x: x.get("lastmod" , 0), False),
     "M": (lambda x: x.get("lastmod" , 0), True),
     "h": (lambda x: x.get("out_path_len" , 0), False),
@@ -3678,6 +3680,8 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                                 output_str += f" {time_ago_from_timestamp(c['last_advert']):>4}"
                             elif i == "m":
                                 output_str += f" {time_ago_from_timestamp(c['lastmod']):>4}"
+                            elif i == "b":
+                                output_str += f" {c['flags']:02x}"
                         output_str += "\n"
                     output_str += f"> {len(ct)} from {len(mc.contacts)} contacts in device{end}"
 
@@ -4700,20 +4704,23 @@ lc supports four parameters:
   filter by type: -t
   filter by flag: -b
 
-Sort order is given as a string with different criterias (lowercase for ascending, uppercse for descending order):
+Sort order is given as a string with different criterias (lowercase for ascending, uppercase for descending order):
     n: sorts by name
+    t: sorts by type
     a: sorts by last advert
     m: sorts by modification time
     h: sorts by path len
     f: starts with favorites
+If several criteria are used, they are evaluated from right to left, so the leftmost one has more priority `-stfn` first sorts by name, then puts the favorites first and finally orders by type.
 Use get/set lc_sort_order to get or set default value
 
 Output format is given as a string with one character by field. Name is always displayed first but you can tailor the rest of the output:
     t: type
     k: key prefix
-    h: hop count
     a: last advert
     m: last modification
+    h: hop count
+    b: flag bits (as hex)
 Use get/set lc_output_format to get or set default value
 """)
 
