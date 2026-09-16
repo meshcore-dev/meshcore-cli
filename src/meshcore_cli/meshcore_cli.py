@@ -170,26 +170,27 @@ def time_ago_from_timestamp (timestamp):
 
 def haversine_distance(coord1, coord2):
     # Radius of the Earth in kilometers (use 3958.8 for miles)
-    R = 6371.0 
-    
+    R = 6371.0
+
     lat1, lon1 = coord1
     lat2, lon2 = coord2
-    
+
     # Convert latitude and longitude to radians
     lat1_rad = math.radians(lat1)
     lon1_rad = math.radians(lon1)
     lat2_rad = math.radians(lat2)
     lon2_rad = math.radians(lon2)
-    
+
     # Differences
     dlat = lat2_rad - lat1_rad
     dlon = lon2_rad - lon1_rad
-    
+
     # Haversine formula computation
-    a = (math.sin(dlat / 2) ** 2 + 
+    a = (math.sin(dlat / 2) ** 2 +
          math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon / 2) ** 2)
+    a = min(1.0, max(0.0, a))
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    
+
     return R * c
 
 def distance_between(contact1, contact2):
@@ -3657,7 +3658,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                         output_format = a[1:]
 
                     elif a[0] == "t": # type
-                        display_types = {TYPE_MAP[t] for t in a[1] if t in TYPE_MAP}
+                        display_types = {TYPE_MAP[t] for t in a[1:] if t in TYPE_MAP}
 
                     elif a[0] == "b": # flag
                         filter_flag = int(a[1:], 0)
@@ -4456,7 +4457,7 @@ def command_usage() :
     -p <port>       : specifies tcp port (default 5000)
     -s <port>[:opts]: use serial port <port>
                         opts are comma separated options
-                            rts=, dts=, baud=
+                            rts=, dtr=, baud=
     -b <baudrate>   : specify baudrate
     -C              : toggles classic mode for prompt
     -c <on/off>     : disables most of color output if off
