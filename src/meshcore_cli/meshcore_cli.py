@@ -153,7 +153,17 @@ LC_OUTPUT_FORMAT = "tkah"
 LC_SORT_ORDER = ""
 
 def time_ago_from_timestamp (timestamp):
+    if timestamp == 0:
+        return "0"
+
     duration = int(time.time()) - timestamp
+    in_future=False
+    if duration < 0 :
+        in_future = True
+        duration = -duration
+        if duration > 86400: # > 1 day drift
+            return ""
+
     if duration / 86400 >= 1 : # result in days
         days_ago = int(duration/86400)
         if days_ago >= 365:
@@ -166,6 +176,10 @@ def time_ago_from_timestamp (timestamp):
         time_ago = f"{int(duration/60)}m"
     else :
         time_ago = f"{int(duration)}s"
+
+    if in_future :
+        time_ago = "+" + time_ago
+
     return time_ago
 
 def haversine_distance(coord1, coord2):
