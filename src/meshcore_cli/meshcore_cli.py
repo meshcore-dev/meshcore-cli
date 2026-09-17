@@ -699,6 +699,7 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
         "change_flags" : contact_list,
         "remove_contact" : contact_list,
         "add_contact" : {"key type name":None},
+        "reset_advert_time" : contact_list,
         "import_contact" : {"meshcore://":None},
         "reload_contacts" : None,
         "aliases" : None,
@@ -854,6 +855,7 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
         "reset_path" : None,
         "change_path" : None,
         "change_flags" : None,
+        "reset_advert_time" : None,
         "req_telemetry" : None,
         "req_binary" : None,
         "forget_password" : None,
@@ -1243,84 +1245,84 @@ else:
 
 
 async def process_redirected_line(mc, line, contact=None, scope="*", prev_contact=None, prev_scope="*", json_output=False, sink=sys.stdout, end="\n"):
-            new_contact = contact
-            new_scope = scope
-            last_ack = True
+    new_contact = contact
+    new_scope = scope
+    last_ack = True
 
-            if line.startswith(">>") : # append to-file redirection
+    if line.startswith(">>") : # append to-file redirection
+        line = line[2:].strip()
+        try:
+            fp, mcline = split_first_token(line)
+            fp = os.path.expanduser(fp)
+            with open(fp, "a") as file:
+                (new_contact, new_scope, last_ack) = await process_redirected_line(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=json_output, sink=file)
+        except ValueError:
+            logger.error("Couldn't parse filename")
+        except OSError as e:
+            logger.error(f"Cannot append to file: {e}")
+
+    elif line.startswith(">") : # to-file redirection
+        line = line[1:].strip()
+        try:
+            fp, mcline = split_first_token(line)
+            fp = os.path.expanduser(fp)
+            with open(fp, "w") as file:
+                (new_contact, new_scope, last_ack) = await process_redirected_line(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=json_output, sink=file)
+        except ValueError:
+            logger.error("Couldn't parse filename")
+        except OSError as e:
+            logger.error(f"Cannot write to file: {e}")
+
+    elif line.startswith("|") : # to process redirection
+        line = line[1:].strip()
+        try:
+            pcom, mcline = split_first_token(line)
+            with subprocess.Popen(shlex.split(pcom, posix=True), stdin=subprocess.PIPE, stdout=sink,text=True) as process:
+                (new_contact, new_scope, last_ack) = await process_redirected_line(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=json_output, sink=process.stdin)
+        except ValueError:
+            logger.error("Couldn't parse name")
+        except FileNotFoundError:
+            logger.error(f"File not found {pcom}")
+        except PermissionError:
+            logger.error(f"Permission denied: {pcom}")
+        except OSError as e:
+            logger.error(f"Cannot pipe: {e}")
+        except BrokenPipeError:
+            logger.error(f"Broken pipe")
+
+    elif line.startswith("<") : # from process redirection
+        try:
+            if line[1] == "|":
+                key = ""
                 line = line[2:].strip()
-                try:
-                    fp, mcline = split_first_token(line)
-                    fp = os.path.expanduser(fp)
-                    with open(fp, "a") as file:
-                        (new_contact, new_scope, last_ack) = await process_redirected_line(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=json_output, sink=file)
-                except ValueError:
-                    logger.error("Couldn't parse filename")
-                except OSError as e:
-                    logger.error(f"Cannot append to file: {e}")
+            else:
+                key = line[1:].split("|", 1)[0].strip()
+                line = line[1:].split("|", 1)[1].strip()
 
-            elif line.startswith(">") : # to-file redirection
-                line = line[1:].strip()
-                try:
-                    fp, mcline = split_first_token(line)
-                    fp = os.path.expanduser(fp)
-                    with open(fp, "w") as file:
-                        (new_contact, new_scope, last_ack) = await process_redirected_line(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=json_output, sink=file)
-                except ValueError:
-                    logger.error("Couldn't parse filename")
-                except OSError as e:
-                    logger.error(f"Cannot write to file: {e}")
-
-            elif line.startswith("|") : # to process redirection
-                line = line[1:].strip()
-                try:
-                    pcom, mcline = split_first_token(line)
-                    with subprocess.Popen(shlex.split(pcom, posix=True), stdin=subprocess.PIPE, stdout=sink,text=True) as process:
-                        (new_contact, new_scope, last_ack) = await process_redirected_line(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=json_output, sink=process.stdin)
-                except ValueError:
-                    logger.error("Couldn't parse name")
-                except FileNotFoundError:
-                    logger.error(f"File not found {pcom}")
-                except PermissionError:
-                    logger.error(f"Permission denied: {pcom}")
-                except OSError as e:
-                    logger.error(f"Cannot pipe: {e}")
-                except BrokenPipeError:
-                    logger.error(f"Broken pipe")
-
-            elif line.startswith("<") : # from process redirection
-                try:
-                    if line[1] == "|":
-                        key = ""
-                        line = line[2:].strip()
-                    else:
-                        key = line[1:].split("|", 1)[0].strip()
-                        line = line[1:].split("|", 1)[1].strip()
-
-                    pcom, mcline = split_first_token(line)
-                    res = subprocess.run(shlex.split(pcom, posix=True), capture_output=True, text=True)
-                    replacement = res.stdout.strip()
-                    if key == "":
-                        mcline = formatter.format(mcline,replacement)
-                    else:
-                        keywords = {key: replacement}
-                        mcline = formatter.format(mcline, **keywords)
-                    (new_contact, new_scope, last_ack) = await process_redirected_line(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=json_output, sink=sink)
-                except IndexError as e:
-                    logger.error(f"Error with substitution: {e}")
-                except ValueError:
-                    logger.error("Couldn't parse name")
-                except FileNotFoundError:
-                    logger.error(f"File not found {pcom}")
-                except PermissionError:
-                    logger.error(f"Permission denied: {pcom}")
-                except OSError as e:
-                    logger.error(f"Cannot pipe: {e}")
-                except BrokenPipeError:
-                    logger.error(f"Broken pipe")
-            else :
-                (new_contact, new_scope, last_ack) = await process_pipeline(mc, line, contact, scope, prev_contact, prev_scope, json_output=json_output, sink=sink)
-            return new_contact, new_scope, last_ack
+            pcom, mcline = split_first_token(line)
+            res = subprocess.run(shlex.split(pcom, posix=True), capture_output=True, text=True)
+            replacement = res.stdout.strip()
+            if key == "":
+                mcline = formatter.format(mcline,replacement)
+            else:
+                keywords = {key: replacement}
+                mcline = formatter.format(mcline, **keywords)
+            (new_contact, new_scope, last_ack) = await process_redirected_line(mc, mcline, contact, scope, prev_contact, prev_scope, json_output=json_output, sink=sink)
+        except IndexError as e:
+            logger.error(f"Error with substitution: {e}")
+        except ValueError:
+            logger.error("Couldn't parse name")
+        except FileNotFoundError:
+            logger.error(f"File not found {pcom}")
+        except PermissionError:
+            logger.error(f"Permission denied: {pcom}")
+        except OSError as e:
+            logger.error(f"Cannot pipe: {e}")
+        except BrokenPipeError:
+            logger.error(f"Broken pipe")
+    else :
+        (new_contact, new_scope, last_ack) = await process_pipeline(mc, line, contact, scope, prev_contact, prev_scope, json_output=json_output, sink=sink)
+    return new_contact, new_scope, last_ack
 
 async def process_pipeline(mc, pipeline, contact=None, scope="*", prev_contact=None, prev_scope="*", json_output=False, sink=sys.stdout, end="\n"):
 
@@ -1705,6 +1707,7 @@ async def process_contact_chat_line(mc, contact, line, inside=False, json_output
             line.startswith("req_acl") or line == "ra" or line.startswith("ra ") or\
             line.startswith("path ") or line == "path" or\
             line.startswith("advert_path") or line == "ap" or line.startswith("ap ") or\
+            line.startswith("reset_advert_time") or\
             line.startswith("logout") :
         args = [line.split()[0], contact['adv_name']]
         out_str = ""
@@ -1865,6 +1868,8 @@ async def process_contact_chat_line(mc, contact, line, inside=False, json_output
 async def apply_command_to_contacts(mc, contact_filter, line, json_output=False, sink=sys.stdout, end="\n"):
     upd_before = None
     upd_after = None
+    adv_before = None
+    adv_after = None
     contact_type = None
     min_hops = None
     max_hops = None
@@ -1892,6 +1897,24 @@ async def apply_command_to_contacts(mc, contact_filter, line, json_output=False,
                 upd_before = t
             elif f[1] == ">":
                 upd_after = t
+            else:
+                logger.error(f"Time filter can only be < or >")
+                return ""
+        elif f[0] == "a": # last advert
+            val_str = f[2:]
+            t = time.time()
+            if val_str[-1] == "d": # value in days
+                t = t - float(val_str[0:-1]) * 86400
+            elif val_str[-1] == "h": # value in hours
+                t = t - float(val_str[0:-1]) * 3600
+            elif val_str[-1] == "m": # value in minutes
+                t = t - float(val_str[0:-1]) * 60
+            else:
+                t = int(val_str)
+            if f[1] == "<": #before
+                adv_before = t
+            elif f[1] == ">":
+                adv_after = t
             else:
                 logger.error(f"Time filter can only be < or >")
                 return ""
@@ -1929,6 +1952,8 @@ async def apply_command_to_contacts(mc, contact_filter, line, json_output=False,
         if (contact_type is None or contact["type"] == contact_type) and\
                 (upd_before is None or contact["lastmod"] < upd_before) and\
                 (upd_after is None or contact["lastmod"] > upd_after) and\
+                (adv_before is None or contact["last_advert"] < adv_before) and\
+                (adv_after is None or contact["last_advert"] > adv_after) and\
                 (min_hops is None or contact["out_path_len"] >= min_hops) and\
                 (max_hops is None or contact["out_path_len"] <= max_hops) and\
                 (flags is None or contact["flags"] & flags == flags):
@@ -3846,6 +3871,17 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 except ValueError:
                     output_str += f"Error ! Command format add_contact key type name{end}"
 
+            case "reset_advert_time":
+                argnum = 1
+                contact = await get_contact_from_arg(mc, cmds[1])
+                contact['last_advert'] = 0
+                res = await mc.commands.update_contact(contact)
+                logger.debug(res)
+                if res.type == EventType.ERROR:
+                    output_str += f"Error while reseting last advert for: {cmds[1]}{end}"
+                elif json_output :
+                    output_str += json.dumps(res.payload, indent=4)+end
+
             case "change_path" | "cp":
                 argnum = 2
                 contact = await get_contact_from_arg(mc, cmds[1])
@@ -4484,6 +4520,7 @@ def get_help_for (cmdname, context="line") :
     Filter is constructed with comma separated fields :
      - u, matches modification time < or > than a timestamp
             (can also be days hours or minutes ago if followed by d,h or m)
+     - a, same as u but for advert time
      - t, matches the type (1: client, 2: repeater, 3: room, 4: sensor)
      - h, matches number of hops
      - d, direct, similar to h>-1
