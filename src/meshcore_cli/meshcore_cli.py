@@ -3137,23 +3137,44 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 argnum = 2
                 dest = None
 
-                if len(cmds[1]) >= 12: # possibly an hex prefix
+                wait_ack = False
+
+                args = cmds[1:]
+                while len(args) > 0 and args[0][0] == "-":
+                    argnum += 1
+                    if len(args[0]) <= 1: # just a dash
+                        args=args[1:]
+                        continue
+                    a = args[0][1:]
+                    if a[0] == "a": # wait for an ack
+                        wait_ack = True
+
+                    args = args[1:]
+
+                if len(args[0]) >= 12: # possibly an hex prefix
                     try:
-                        dest = bytes.fromhex(cmds[1])
+                        dest = bytes.fromhex(args[0])
                     except ValueError:
                         dest = None
 
                 if dest is None:
-                    dest = await get_contact_from_arg(mc, cmds[1])
+                    dest = await get_contact_from_arg(mc, args[0])
 
                 if dest is None:
                     if json_output :
-                        output_str += json.dumps({"error" : "unknown destination", "dest" : cmds[1]})+end
+                        output_str += json.dumps({"error" : "unknown destination", "dest" : args[0]})+end
                     else:
-                        output_str += f"Unknown destination {cmds[1]}{end}"
+                        output_str += f"Unknown destination {args[0]}{end}"
 
-                else :
-                    res = await send_msg(mc, dest, cmds[2])
+                elif wait_ack:
+                    ack = await msg_ack(mc, dest, args[1])
+                    if not ack:
+                        if json_output:
+                            output_str += json.dumps({"ack" : ack})+end
+                        else:
+                            output_str += f"No ack received{end}"
+                else:
+                    res = await send_msg(mc, dest, args[1])
                     logger.debug(res)
                     if res.type == EventType.ERROR:
                         output_str += f"Error sending message: {res}{end}"
