@@ -3703,6 +3703,8 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 display_types = LC_DISPLAY_TYPES
                 output_format = LC_OUTPUT_FORMAT
                 filter_flag = 0
+                quiet = False
+                display_total = True
 
                 args = cmds[1:]
                 while len(args) > 0 and args[0][0] == "-":
@@ -3723,68 +3725,77 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                     elif a[0] == "b": # flag
                         filter_flag = int(a[1:], 0)
 
+                    elif a[0] == "q": # quiet
+                        quiet = True
+
+                    elif a[0] == "l": # only displays contact list (no total)
+                        display_total = False
+
                     args=args[1:]
 
-                res = mc.contacts
-                ct = list(res.values())
+                if not quiet:
+                    res = mc.contacts
+                    ct = list(res.values())
 
-                if "d" in output_format.lower() or "d" in sort_order.lower():
-                    # calculate distance for each node (override previous val)
-                    for c in ct:
-                        c['distance'] = distance_between(mc.self_info, c)
+                    if "d" in output_format.lower() or "d" in sort_order.lower():
+                        # calculate distance for each node (override previous val)
+                        for c in ct:
+                            c['distance'] = distance_between(mc.self_info, c)
 
-                if filter_flag > 0:
-                    ct = [x for x in ct if x.get("flags", 0) & filter_flag]
+                    if filter_flag > 0:
+                        ct = [x for x in ct if x.get("flags", 0) & filter_flag]
 
-                if display_types != []:
-                   ct = [x for x in ct if x.get("type") in display_types]
+                    if display_types != []:
+                       ct = [x for x in ct if x.get("type") in display_types]
 
-                for s in reversed(sort_order):
-                    if s not in SORTING_CRITERIA:
-                        continue
-                    keyfunc, reverse = SORTING_CRITERIA[s]
-                    ct.sort(key=keyfunc, reverse=reverse)
+                    for s in reversed(sort_order):
+                        if s not in SORTING_CRITERIA:
+                            continue
+                        keyfunc, reverse = SORTING_CRITERIA[s]
+                        ct.sort(key=keyfunc, reverse=reverse)
 
-                if json_output : # json output historically prints the whole dict ...
-                                 # if there were no args, print the dict else the list
-                    if argnum == 0:
-                        output_str += json.dumps(res, indent=4) + end
-                    else:
-                        output_str += json.dumps(ct, indent=4) + end
-                else :
-
-                    for c in ct:
-                        if c['out_path_len'] == -1:
-                            path_str = "Flood"
-                        elif c['out_path_len'] == 0:
-                            path_str = "0 hop"
+                    if json_output : # json output historically prints the whole dict ...
+                                     # if there were no args, print the dict else the list
+                        if argnum == 0:
+                            output_str += json.dumps(res, indent=4) + end
                         else:
-                            phs = c['out_path_hash_mode'] + 1
-                            plen = c['out_path_len']
-                            path_str_in = c['out_path']
-                            path_str = path_str_in[:2*phs]
-                            for i in range(1,plen):
-                                path_str = path_str + "," + path_str_in[i*phs*2:(i+1)*2*phs]
-                            #path_str = f"{c[1]['out_path']}:{c[1]['out_path_hash_mode']}"
-                        output_str += f"{c['adv_name']:30} "
-                        output_str += f"{ANSI_START}34G"
-                        for i in output_format.lower():
-                            if i == "t":
-                                output_str += f" {CONTACT_TYPENAMES[c['type']]:4}"
-                            elif i == "k":
-                                output_str += f" {c['public_key'][:12]}"
-                            elif i == "h":
-                                output_str += f" {path_str:12}"
-                            elif i == "a":
-                                output_str += f" {time_ago_from_timestamp(c['last_advert']):>4}"
-                            elif i == "m":
-                                output_str += f" {time_ago_from_timestamp(c['lastmod']):>4}"
-                            elif i == "b":
-                                output_str += f" {c['flags']:02x}"
-                            elif i == "d":
-                                output_str += f" {c['distance']:7.2f}km"
-                        output_str += "\n"
-                    output_str += f"> {len(ct)} from {len(mc.contacts)} contacts in device{end}"
+                            output_str += json.dumps(ct, indent=4) + end
+                    else :
+
+                        for c in ct:
+                            if c['out_path_len'] == -1:
+                                path_str = "Flood"
+                            elif c['out_path_len'] == 0:
+                                path_str = "0 hop"
+                            else:
+                                phs = c['out_path_hash_mode'] + 1
+                                plen = c['out_path_len']
+                                path_str_in = c['out_path']
+                                path_str = path_str_in[:2*phs]
+                                for i in range(1,plen):
+                                    path_str = path_str + "," + path_str_in[i*phs*2:(i+1)*2*phs]
+                                #path_str = f"{c[1]['out_path']}:{c[1]['out_path_hash_mode']}"
+                            output_str += f"{c['adv_name']:30} "
+                            output_str += f"{ANSI_START}34G"
+                            for i in output_format.lower():
+                                if i == "t":
+                                    output_str += f" {CONTACT_TYPENAMES[c['type']]:4}"
+                                elif i == "k":
+                                    output_str += f" {c['public_key'][:12]}"
+                                elif i == "h":
+                                    output_str += f" {path_str:12}"
+                                elif i == "a":
+                                    output_str += f" {time_ago_from_timestamp(c['last_advert']):>4}"
+                                elif i == "m":
+                                    output_str += f" {time_ago_from_timestamp(c['lastmod']):>4}"
+                                elif i == "b":
+                                    output_str += f" {c['flags']:02x}"
+                                elif i == "d":
+                                    output_str += f" {c['distance']:7.2f}km"
+                            output_str += "\n"
+                        if display_total:
+                            output_str += f"> {len(ct)} from {len(mc.contacts)} contacts in device{end}"
+                        # we may have an issue with display total if end is empty ...
 
             case "pending_contacts":
                 if json_output:
