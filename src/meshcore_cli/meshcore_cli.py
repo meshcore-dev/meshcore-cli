@@ -3641,7 +3641,9 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                             output_str += json.dumps(res, indent=4)+end
                         else:
                             width = shutil.get_terminal_size(fallback=(80, 24)).columns
-                            output_str += f"Got {res['results_count']} neighbours out of {res['neighbours_count']} from {contact['adv_name']}:\n"
+                            output_str += f"Got {res['results_count']} neighbours out of {res['neighbours_count']} from {contact['adv_name']}:"
+                            if res['results_count'] > 0:
+                                output_str += '\n'
                             first = True
                             for n in res['neighbours']:
                                 if first :
