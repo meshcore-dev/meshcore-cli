@@ -69,6 +69,7 @@ JSON = False
 
 PS = None
 CS = None
+DS = None
 
 # Ansi colors
 ANSI_END = "\033[0m"
@@ -327,7 +328,9 @@ async def process_event_message(mc, ev, json_output, end="\n"):
 
         path_str = ""
 
-        if process_event_message.timestamp != "" and process_event_message.timestamp != "off":
+        if "sender_timestamp" in data\
+                and process_event_message.timestamp != ""\
+                and process_event_message.timestamp != "off":
             ts = data["sender_timestamp"]
             if process_event_message.timestamp == "on":
                 if (abs(time.time()-ts) < 86400):
@@ -345,7 +348,7 @@ async def process_event_message(mc, ev, json_output, end="\n"):
         if "SNR" in data and process_event_message.print_snr:
             path_str = path_str + f",{data['SNR']}dB"
 
-        if (data['type'] == "PRIV") :
+        if ('type' in data and data['type'] == "PRIV") :
             ct = mc.get_contact_by_key_prefix(data['pubkey_prefix'])
             if ct is None:
                 logger.debug(f"Unknown contact with pubkey prefix: {data['pubkey_prefix']}")
@@ -383,7 +386,7 @@ async def process_event_message(mc, ev, json_output, end="\n"):
 
             output_str += disp + end
 
-        elif (data['type'] == "CHAN") :
+        elif ('type' in data and data['type'] == "CHAN") :
             path_str = f"{ANSI_YELLOW}({path_str}){ANSI_END}"
             if hasattr(mc, "channels"):
                 ch_name = mc.channels[data['channel_idx']]['channel_name']
@@ -402,6 +405,24 @@ async def process_event_message(mc, ev, json_output, end="\n"):
                 disp = escape_ansi(disp)
 
             output_str += disp + end
+
+        elif ('type' in data and data['type'] == "DATA") :
+            path_str = f"{ANSI_YELLOW}({path_str}){ANSI_END}"
+            if hasattr(mc, "channels"):
+                ch_name = mc.channels[data['channel_idx']]['channel_name']
+                disp = f"{ANSI_GREEN}{ch_name} {path_str}"
+                process_event_message.last_node = {"adv_name" : ch_name, "type" : 0, "chan_nb" : data['channel_idx']}
+            elif data["channel_idx"] == 0: #public
+                disp = f"{ANSI_GREEN}public {path_str}"
+                process_event_message.last_node = {"adv_name" : "public", "type" : 0, "chan_nb" : 0}
+            else :
+                disp = f"{ANSI_GREEN}ch{data['channel_idx']} {path_str}"
+                process_event_message.last_node = {"adv_name" : f"ch{data['channel_idx']}", "type" : 0, "chan_nb" : data['channel_idx']}
+            disp = disp + f"{ANSI_END} "
+            disp += json.dumps(ev.payload)
+
+            output_str += disp + end
+
         else:
             output_str += json.dumps(ev.payload) + end
     return output_str
@@ -557,24 +578,25 @@ async def log_message(mc, msg):
     if log_message.file is None:
         return
 
-    if msg["type"] == "PRIV" :
-        ct = mc.get_contact_by_key_prefix(msg['pubkey_prefix'])
-        if ct is None:
-            msg["name"] = msg["pubkey_prefix"]
-            msg["sender"] = msg["pubkey_prefix"]
-        else:
-            msg["name"] = ct["adv_name"]
-            msg["sender"] = ct["adv_name"]
-    elif msg["type"] == "CHAN" :
-        if hasattr(mc, 'channels') :
-            msg["sender"] = mc.channels[msg['channel_idx']]["channel_name"]
-        else:
-            msg["sender"] = f"channel {msg['channel_idx']}"
-        msg["name"] = msg["sender"]
-    msg["timestamp"] = int(time.time())
-
-    with open(log_message.file, "a") as logfile:
-        logfile.write(json.dumps(msg) + "\n")
+    if "type" in msg and msg["type"] != "DATA":
+        if msg["type"] == "PRIV" :
+            ct = mc.get_contact_by_key_prefix(msg['pubkey_prefix'])
+            if ct is None:
+                msg["name"] = msg["pubkey_prefix"]
+                msg["sender"] = msg["pubkey_prefix"]
+            else:
+                msg["name"] = ct["adv_name"]
+                msg["sender"] = ct["adv_name"]
+        elif msg["type"] == "CHAN" :
+            if hasattr(mc, 'channels') :
+                msg["sender"] = mc.channels[msg['channel_idx']]["channel_name"]
+            else:
+                msg["sender"] = f"channel {msg['channel_idx']}"
+            msg["name"] = msg["sender"]
+        msg["timestamp"] = int(time.time())
+    
+        with open(log_message.file, "a") as logfile:
+            logfile.write(json.dumps(msg) + "\n")
 
 log_message.file=None
 
@@ -593,7 +615,7 @@ handle_message.display=True
 
 async def subscribe_to_msgs(mc, json_output=False):
     """ Subscribe to incoming messages """
-    global PS, CS
+    global PS, CS, DS
     await mc.ensure_contacts()
     handle_message.json_output = json_output
     # Subscribe to private messages
@@ -602,6 +624,9 @@ async def subscribe_to_msgs(mc, json_output=False):
     # Subscribe to channel messages
     if CS is None :
         CS = mc.subscribe(EventType.CHANNEL_MSG_RECV, handle_message)
+    # Subscribe to channel data
+    if DS is None :
+        DS = mc.subscribe(EventType.CHANNEL_DATA_RECV, handle_message)
     await mc.start_auto_message_fetching()
 
 # redefine get_completion to let user put symbols in first item
@@ -3198,6 +3223,27 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                     logger.debug(res)
                     if res.type == EventType.ERROR:
                         output_str += f"Error sending message: {res}{end}"
+                    elif json_output :
+                        output_str += json.dumps(res.payload, indent=4)+end
+
+            case "chan_data" :
+                argnum = 3 # chan/datatype/payload (path will be an option -p...)
+                if cmds[1].isnumeric() :
+                    nb = int(cmds[1])
+                else:
+                    chan = await get_channel_by_name(mc, cmds[1])
+                    if chan is None:
+                        nb = None
+                    else:
+                        nb = chan['channel_idx']
+                if nb is None:
+                    logger.error("Invalid channel")
+                else:
+                    res = await mc.commands.send_channel_data(
+                        nb, int(cmds[2]), bytes.fromhex(cmds[3]))
+                    logger.debug(res)
+                    if res.type == EventType.ERROR:
+                        output_str += f"Error sending chan data: {res}{end}"
                     elif json_output :
                         output_str += json.dumps(res.payload, indent=4)+end
 
