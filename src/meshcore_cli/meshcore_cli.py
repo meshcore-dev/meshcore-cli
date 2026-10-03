@@ -117,6 +117,7 @@ ALIASES={}
 HANDLERS = { # dicts that will be indexed by numbers
     "rxlog" : {},
     "msgs" : {},
+    "chan_data" : {},
 }
 LAST_HANDLER_ID = 0
 HANDLER_QUEUE_SIZE = 100
@@ -407,21 +408,22 @@ async def process_event_message(mc, ev, json_output, end="\n"):
             output_str += disp + end
 
         elif ('type' in data and data['type'] == "DATA") :
-            path_str = f"{ANSI_YELLOW}({path_str}){ANSI_END}"
-            if hasattr(mc, "channels"):
-                ch_name = mc.channels[data['channel_idx']]['channel_name']
-                disp = f"{ANSI_GREEN}{ch_name} {path_str}"
-                process_event_message.last_node = {"adv_name" : ch_name, "type" : 0, "chan_nb" : data['channel_idx']}
-            elif data["channel_idx"] == 0: #public
-                disp = f"{ANSI_GREEN}public {path_str}"
-                process_event_message.last_node = {"adv_name" : "public", "type" : 0, "chan_nb" : 0}
-            else :
-                disp = f"{ANSI_GREEN}ch{data['channel_idx']} {path_str}"
-                process_event_message.last_node = {"adv_name" : f"ch{data['channel_idx']}", "type" : 0, "chan_nb" : data['channel_idx']}
-            disp = disp + f"{ANSI_END} "
-            disp += json.dumps(ev.payload)
+            if process_event_message.display_channel_data:
+                path_str = f"{ANSI_YELLOW}({path_str}){ANSI_END}"
+                if hasattr(mc, "channels"):
+                    ch_name = mc.channels[data['channel_idx']]['channel_name']
+                    disp = f"{ANSI_GREEN}{ch_name} {path_str}"
+                    process_event_message.last_node = {"adv_name" : ch_name, "type" : 0, "chan_nb" : data['channel_idx']}
+                elif data["channel_idx"] == 0: #public
+                    disp = f"{ANSI_GREEN}public {path_str}"
+                    process_event_message.last_node = {"adv_name" : "public", "type" : 0, "chan_nb" : 0}
+                else :
+                    disp = f"{ANSI_GREEN}ch{data['channel_idx']} {path_str}"
+                    process_event_message.last_node = {"adv_name" : f"ch{data['channel_idx']}", "type" : 0, "chan_nb" : data['channel_idx']}
+                disp = disp + f"{ANSI_END} "
+                disp += json.dumps(ev.payload)
 
-            output_str += disp + end
+                output_str += disp + end
 
         else:
             output_str += json.dumps(ev.payload) + end
@@ -429,6 +431,7 @@ async def process_event_message(mc, ev, json_output, end="\n"):
 process_event_message.print_snr=False
 process_event_message.color=True
 process_event_message.last_node=None
+process_event_message.display_channel_data=True
 process_event_message.timestamp=""
 
 async def handle_log_rx(event):
@@ -607,7 +610,11 @@ async def handle_message(event):
                                 json_output=handle_message.json_output), end="")
     await log_message(handle_message.mc, event.payload.copy())
 
-    enqueue_handler_event("msgs", event.payload)
+    pld = event.payload
+    if "type" in pld and pld["type"] == "DATA":
+        enqueue_handler_event("chan_data", event.payload)
+    else:
+        enqueue_handler_event("msgs", event.payload)
 
 handle_message.json_output=False
 handle_message.mc=None
@@ -689,11 +696,12 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
     completion_list = {
         "to" : to_list,
         "/to" : to_list,
-        "public" : None,
-        "chan" : None,
     }
 
     root_completion_list = {
+        "public" : None,
+        "chan" : None,
+        "chan_data" : None,
         "ver" : None,
         "infos" : None,
         "advert" : None,
@@ -730,7 +738,7 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
         "aliases" : None,
         "aliases_load" : None,
         "alias" : None,
-        "handler_attach": {"rxlog":None, "msgs":None},
+        "handler_attach": {"rxlog":None, "msgs":None, "chan_data":None},
         "handler_detach": None,
         "handlers": None,
         "login" : contact_list,
@@ -771,6 +779,7 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
             "lc_output_format":None,
             "lc_sort_order":None,
             "print_adverts" : {"on":None, "off":None},
+            "display_channel_data" : {"on":None, "off":None},
             "json_log_rx" : {"on":None, "off":None},
             "channel_echoes" : {"on":None, "off":None},
             "advert_echoes" : {"on":None, "off":None},
@@ -806,6 +815,7 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
             "print_timestamp":None,
             "json_msgs":None,
             "color":None,
+            "display_channel_data":None,
             "lc_output_format":None,
             "lc_sort_order":None,
             "print_adverts":None,
@@ -2498,6 +2508,8 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                         SLASH_END = cmds[2]
                     case "invert_slash":
                         INVERT_SLASH = cmds[2] == "on"
+                    case "display_channel_data":
+                        process_event_message.display_channel_data = (cmds[2] == "on")
                     case "color" :
                         process_event_message.color = (cmds[2] == "on")
                         if json_output :
@@ -2796,6 +2808,11 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                             output_str += json.dumps({"json_msgs" : handle_message.json_output})+end
                         else:
                             output_str += f"{'on' if handle_message.json_output else 'off'}{end}"
+                    case "display_channel_data":
+                        if json_output :
+                            output_str += json.dumps({"display_channel_data" : process_event_message.display_channel_data})+end
+                        else:
+                            output_str += f"{'on' if process_event_message.display_channel_data else 'off'}{end}"
                     case "color":
                         if json_output :
                             output_str += json.dumps({"color" : process_event_message.color})+end
@@ -4349,7 +4366,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 process = None
 
                 try:
-                    if not htype in ["msgs", "rxlog"]:
+                    if not htype in ["msgs", "rxlog", "chan_data"]:
                         raise ValueError (f"Unknown handler type {htype}")
                     process = await asyncio.create_subprocess_exec(
                         *shlex.split(cmd, posix=True),
@@ -4387,7 +4404,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
             case "handler_detach":
                 argnum = 1
                 nb = int(cmds[1])
-                handlers = HANDLERS["msgs"]|HANDLERS["rxlog"]
+                handlers = HANDLERS["msgs"]|HANDLERS["rxlog"]|HANDLERS["chan_data"]
                 handler = handlers[nb]
                 handler["closed"] = True
                 for task_name in ("writer_task", "output_task"):
