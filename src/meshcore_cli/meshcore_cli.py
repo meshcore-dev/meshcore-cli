@@ -3439,31 +3439,40 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                                 output_str += f"Path for {contact['adv_name']}: out {outp}, in {inp}{end}"
 
             case "node_discover"|"nd" :
-                argnum = 1
+                argnum = 0
+                types = 0xFF
                 prefix_only = True
+                filter_args = False
 
-                if len(cmds) == 1:
-                    argnum = 0
-                    types = 0xFF
-                else:
-                    try: # try to decode type as int
-                        types = int(cmds[1])
-                    except ValueError:
-                        if "all" in cmds[1]:
-                            types = 0xFF
-                        else :
-                            types = 0
-                            if "rep" in cmds[1] or "rpt" in cmds[1]:
-                                types = types | 4
-                            if "cli" in cmds[1] or "comp" in cmds[1]:
-                                types = types | 2
-                            if "room" in cmds[1]:
-                                types = types | 8
-                            if "sens" in cmds[1]:
-                                types = types | 16
+                args = cmds[1:]
+                while len(args) > 0 and args[0][0] == "-": # Breaking change ... 
 
-                    if "full" in cmds[1]:
+                    if args[0].startswith('-f'): # -f or -full
                         prefix_only = False
+
+                    if args[0].startswith('-t'): # same as before but with -t
+                        arg = args[0][2:]
+                        if not filter_args:
+                            filter_args = True
+                            types = 0
+
+                        try: # try to decode type as int
+                            types = int(arg)
+                        except ValueError:
+                            if "all" in arg:
+                                types = 0xFF
+                            else :
+                                if "rep" in arg or "rpt" in arg:
+                                    types = types | 4
+                                if "cli" in arg or "comp" in arg:
+                                    types = types | 2
+                                if "room" in arg:
+                                    types = types | 8
+                                if "sens" in arg:
+                                    types = types | 16
+
+                    argnum += 1
+                    args = args[1:]
 
                 res = await mc.commands.send_node_discover_req(types, prefix_only=prefix_only)
                 if res is None or res.type == EventType.ERROR:
@@ -4636,15 +4645,18 @@ def get_help_for (cmdname, context="line") :
 """)
 
     elif cmdname == "node_discover" or cmdname == "nd" :
-        print("""node_discover <filter> : discovers 0-hop nodes and displays signal info
+        print("""node_discover [-t<filter>] [-f] : discovers 0-hop nodes and displays signal info
 
-    filter can be "all" for all types or nodes or a comma separated list consisting of :
+    `-t` asks for nodes regarding filter.
+    filter can be an integer value or "all" for all types or nodes or a comma separated list consisting of :
      - cli or comp for companions
      - rep for repeaters
      - sens for sensors
      - room for chat rooms
 
-    nd can be used with no filter parameter ... !!! BEWARE WITH CHAINING !!!
+    `-f` or `-full`: will ask for the full key of the node
+    
+    BEWARE: filter option have changed since v1.6.4, using -t is now mandatory !!!
 """)
 
     elif cmdname == "get" :
