@@ -3244,11 +3244,30 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                         output_str += json.dumps(res.payload, indent=4)+end
 
             case "chan_data" :
-                argnum = 3 # chan/datatype/payload (path will be an option -p...)
-                if cmds[1].isnumeric() :
-                    nb = int(cmds[1])
+                argnum = 3 # [-p path:hash_mode] chan datatype payload 
+                path_hash_mode = 0
+                path = None
+
+                args = cmds[1:]
+                while len(args) > 0 and args[0][0] == "-":
+                    arg = args[0]
+
+                    if arg.startswith("-p"): # path comes as hex string with mode after `:`
+                        path_str = arg[2:]
+                        if ":" in path_str:
+                            path_hash_mode = int(path_str.split(":")[1])
+                        if path_str.split(":")[0] == "0": # 0-hop message
+                            path = bytes([])
+                        else:
+                            path = bytes.fromhex(path_str.split(":")[0])
+
+                    argnum += 1
+                    args = args[1:] # next argument
+
+                if args[0].isnumeric() :
+                    nb = int(args[0])
                 else:
-                    chan = await get_channel_by_name(mc, cmds[1])
+                    chan = await get_channel_by_name(mc, args[0])
                     if chan is None:
                         nb = None
                     else:
@@ -3257,7 +3276,8 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                     logger.error("Invalid channel")
                 else:
                     res = await mc.commands.send_channel_data(
-                        nb, int(cmds[2]), bytes.fromhex(cmds[3]))
+                        nb, int(args[1],0), bytes.fromhex(args[2]),
+                        path = path, path_hash_mode = path_hash_mode)
                     logger.debug(res)
                     if res.type == EventType.ERROR:
                         output_str += f"Error sending chan data: {res}{end}"
