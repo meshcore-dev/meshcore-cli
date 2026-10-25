@@ -2767,7 +2767,8 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                             vname = cmds[1]
                         res = await mc.commands.set_custom_var(vname, cmds[2])
                         if res.type == EventType.ERROR:
-                            output_str += f"Error : {res}{end}"
+                            logger.debug(f"No config found by that {res}, trying to exec line as cli")
+                            return (None, output_str)
                         elif json_output :
                             output_str += json.dumps({"result" : "set", "var" : vname, "value" : cmds[2]})+end
                         else :
@@ -3084,10 +3085,8 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                                     vname = cmds[1]
                                 val = res.payload[vname]
                             except KeyError:
-                                if json_output :
-                                    output_str += json.dumps({"error" : "Unknown var", "var" : cmds[1]})+end
-                                else :
-                                    output_str += f"Unknown var {cmds[1]}{end}"
+                                logger.debug(f"No config found by that name, trying to exec line as cli")
+                                return (None, output_str)
                             else:
                                 if json_output :
                                     output_str += json.dumps({"var" : vname, "value" : val})+end
