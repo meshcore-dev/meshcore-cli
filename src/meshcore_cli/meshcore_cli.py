@@ -35,7 +35,7 @@ except ImportError:
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.6.7"
+VERSION = "v1.6.8"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = os.path.expanduser("~/.config/meshcore/")
@@ -153,6 +153,8 @@ TYPE_MAP = {
 LC_DISPLAY_TYPES = [1, 2, 3, 4]
 LC_OUTPUT_FORMAT = "tkah"
 LC_SORT_ORDER = ""
+
+LAST_DISCOVERED_NODES = []
 
 def time_ago_from_timestamp (timestamp):
     if timestamp == 0:
@@ -663,6 +665,7 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
     pending = pending or {}
     contact_list = {}
     pending_list = {}
+    discovered_list = {"-a":None}
     to_list = {}
 
     to_list["~"] = None
@@ -683,6 +686,8 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
     for c in pit :
         pending_list[c[1]['public_key']] = None
 
+    for n in LAST_DISCOVERED_NODES:
+        discovered_list[n['pubkey'][:16]] = None 
     to_list.update(contact_list)
 
     to_list["ch"] = None
@@ -725,7 +730,9 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
         "path": contact_list,
         "disc_path" : contact_list,
         "advert_path" : contact_list | pending_list,
-        "node_discover": {"all":None, "sens":None, "rep":None, "comp":None, "room":None, "cli":None},
+        "node_discover": {"-tall":None, "-tsens":None, "-trep":None, "-tcomp":None, "-troom":None, "-tcli":None},
+        "list_discovered": None,
+        "add_discovered": discovered_list,
         "trace" : None,
         "reset_path" : contact_list,
         "change_path" : contact_list,
@@ -2414,6 +2421,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
     """
     global ARROW_HEAD, SLASH_START, SLASH_END, INVERT_SLASH, LAST_HANDLER_ID
     global LC_DISPLAY_TYPES, LC_OUTPUT_FORMAT, LC_SORT_ORDER
+    global LAST_DISCOVERED_NODES
     output_str = ""
     try :
         argnum = 0
@@ -3540,6 +3548,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                 else:
                     exp_tag = res.payload["tag"].to_bytes(4, "little").hex()
                     dn = []
+                    LAST_DISCOVERED_NODES = []
                     while True:
                         r = await mc.wait_for_event(
                             EventType.DISCOVER_RESPONSE,
@@ -3549,7 +3558,12 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                         if r is None or r.type == EventType.ERROR:
                             break
                         else:
-                            dn.append(r.payload)
+                            n = r.payload
+                            dn.append(n)
+                            if len(n['pubkey']) == 64:
+                                contact = mc.get_contact_by_key_prefix(n['pubkey'])
+                                if contact is None:
+                                    LAST_DISCOVERED_NODES.append(n)
 
                     if json_output:
                         output_str += json.dumps(dn)+end
@@ -3567,6 +3581,57 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                                 type = CONTACT_TYPENAMES[n['node_type']]
 
                             output_str += f" {name:28} {type:>4} SNR: {n['SNR_in']:6,.2f}->{n['SNR']:6,.2f} RSSI: ->{n['RSSI']:4}\n"
+
+            case "list_discovered" :
+                output_str += json.dumps(LAST_DISCOVERED_NODES, indent=4) + end
+
+            case "add_discovered" :
+                name = None
+                args = cmds[1:]
+                add_all = False
+                argnum = 1
+
+                while len(args) > 0 and args[0][0] == "-":
+                    if args[0].startswith('-n'): # name
+                        name = args[0][2:]
+
+                    if args[0].startswith('-a'):
+                        add_all = True
+                        argnum = argnum - 1
+
+                    argnum += 1
+                    args = args[1:]
+
+                if not add_all:
+                    prefix = args[0]
+                nodes = 0
+                jout = []
+                for n in LAST_DISCOVERED_NODES[:]:
+                    if add_all or n['pubkey'].startswith(prefix):
+                        LAST_DISCOVERED_NODES.remove(n)
+                        if add_all or name is None:
+                            name = n['pubkey'][0:8]
+                        contact = {
+                            "public_key": n['pubkey'],
+                            "type" : n['node_type'],
+                            "flags" : 0,
+                            "out_path_len" : -1,
+                            "out_path" : "",
+                            "out_path_hash_mode" : 0,
+                            "adv_name" : name,
+                            "adv_lat" : 0,
+                            "adv_lon" : 0,
+                            "last_advert" : 0,
+                        }
+                        res = await mc.commands.update_contact(contact)
+                        logger.debug(res)
+                        if res.type == EventType.ERROR:
+                            output_str += f"Error adding contact: {res}\n"
+                        else :
+                            jout.append(json.dumps({'name':name, 'pubkey':n['pubkey'], 'type':n['node_type']}))
+
+                await mc.commands.get_contacts() # reload contacts
+                output_str += json.dumps([json.loads(x) for x in jout]) + end
 
             case "req_regions"|"rr":
                 argnum = 1
@@ -4643,6 +4708,8 @@ def command_help():
     wmt8                   : wait for a msg (reply) with a timeout     ]
     req_status <name>      : requests status from a node            rs
     req_neighbours <name>  : requests for neighbours in binary form rn
+    node_discover          : lauch a local node discovery
+    add_discovered <key>   : add a discovered node (repeater) to the list
     trace <path>           : run a trace, path is comma separated""")
 
 def usage () :
@@ -4704,7 +4771,7 @@ def get_help_for (cmdname, context="line") :
         at t=2 rp login
 """)
 
-    elif cmdname == "node_discover" or cmdname == "nd" :
+    elif cmdname == "node_discover" or cmdname == "nd" or cmdname == "list_discovered" or cmdname == "add_discovered" :
         print("""node_discover [-t<filter>] [-f] : discovers 0-hop nodes and displays signal info
 
     `-t` asks for nodes regarding filter.
@@ -4717,6 +4784,15 @@ def get_help_for (cmdname, context="line") :
     `-f` or `-full`: will ask for the full key of the node
     
     BEWARE: filter option have changed since v1.6.4, using -t is now mandatory !!!
+
+    Once node_discover has been performed with -f (to get full key) you can add the node using `add_discovered` or list them with `list_discovered`. The discovered list is emptied at each node discovery.
+
+add_discovered [-n<name>] [-a] <pubkey_prefix>
+
+    `-n`: to give a name to the node
+    `-a`: will add all found nodes (won't use the provided name though)
+    <pubkey_prefix>: to identify the node to add if `-a` has not been used
+
 """)
 
     elif cmdname == "get" :
