@@ -2238,62 +2238,57 @@ async def get_channel_by_name (mc, name):
 
     return None
 
-async def get_contacts (mc, anim=False, lastomod=0, timeout=5) :
+async def get_contacts(mc, anim=False, lastomod=0, timeout=5):
     if mc._contacts:
         return
 
     if anim:
         print("Fetching contacts ", end="", flush=True)
 
-    await mc.commands.get_contacts_async()
+    loop = asyncio.get_running_loop()
+    result = loop.create_future()
+    state = {"n": 0, "activity": False}
 
-    futures = []
-    contact_nb = 0
-    for event_type in [EventType.ERROR, EventType.NEXT_CONTACT, EventType.CONTACTS] :
-        future = asyncio.create_task(
-            mc.wait_for_event(event_type, {}, timeout=timeout)
-        )
-        futures.append(future)
+    def on_next(event):
+        state["n"] += 1
+        state["activity"] = True
+        if anim:
+            print(".", end="", flush=True)
 
-    while True:
-        # Wait for the first event to complete or all to timeout
-        done, pending = await asyncio.wait(
-            futures, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
-        )
+    def on_end(event):
+        logger.debug(f"get_contacts: got {event.type}")
+        if not result.done():
+            result.set_result(event)
 
-        # Check if any future completed successfully
-        if len(done) == 0:
-            logger.debug("Timeout while getting contacts")
-            for future in pending: # cancel all futures
-                future.cancel()
-            return None
+    subs = [
+        mc.subscribe(EventType.NEXT_CONTACT, on_next),
+        mc.subscribe(EventType.CONTACTS, on_end),
+        mc.subscribe(EventType.ERROR, on_end),
+    ]
 
-        for future in done:
-            event = await future
+    try:
+        await mc.commands.get_contacts_async()
 
-            if event:
-                if event.type == EventType.NEXT_CONTACT:
-                    if anim:
-                        contact_nb = contact_nb+1
-                        print(".", end="", flush=True)
-                else: # Done or Error ... cancel pending and return
-                    if anim:
-                        if event.type == EventType.CONTACTS:
-                            print ((len(event.payload)-contact_nb)*"." + " Done")
-                        else :
-                            print(" Error")
-                    for future in pending:
-                        future.cancel()
-                    return event
+        while True:
+            state["activity"] = False
+            try:
+                # shield so the timeout doesn't cancel the future itself
+                event = await asyncio.wait_for(asyncio.shield(result), timeout)
+            except asyncio.TimeoutError:
+                if state["activity"]:
+                    continue            # still receiving contacts, keep waiting
+                logger.debug("Timeout while getting contacts")
+                return None
 
-        futures = []
-        for future in pending: # put back pending
-            futures.append(future)
-
-        future = asyncio.create_task( # and recreate NEXT_CONTACT
-                mc.wait_for_event(EventType.NEXT_CONTACT, {}, timeout)
-            )
-        futures.append(future)
+            if anim:
+                if event.type == EventType.CONTACTS:
+                    print(max(len(event.payload) - state["n"], 0) * "." + " Done")
+                else:
+                    print(" Error")
+            return event
+    finally:
+        for s in subs:
+            s.unsubscribe()
 
 async def get_channels (mc, anim=False) :
     if hasattr(mc, 'channels') :
