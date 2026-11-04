@@ -2753,7 +2753,7 @@ async def next_cmd(mc, cmds, json_output=False, sink=sys.stdout, end="\n"):
                         auc = (cmds[2] == "on") or (cmds[2] == "true") or (cmds[2] == "yes") or (cmds[2] == "1")
                         mc.auto_update_contacts=auc
                     case "telemetry_mode_base":
-                        if (cmds[2] == "2") or (cmds[2] == "all") or (cmds[2] == "yes") or (cmds[2] == "on") :
+                        if (cmds[2] == "2") or (cmds[2].startswith("al")) or (cmds[2] == "yes") or (cmds[2] == "on") :
                             mode = 2
                         elif (cmds[2] == "1") or (cmds[2] == "selected") or (cmds[2] == "dev") :
                             mode = 1
