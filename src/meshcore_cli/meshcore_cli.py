@@ -4737,6 +4737,7 @@ def command_usage() :
                         opts are comma separated options
                             rts=, dtr=, baud=
     -b <baudrate>   : specify baudrate
+    -f              : connect to first encountered device
     -C              : toggles classic mode for prompt
     -c <on/off>     : disables most of color output if off
     -r              : repeater mode (raw text CLI, use with -s)
