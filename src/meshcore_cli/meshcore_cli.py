@@ -35,7 +35,7 @@ except ImportError:
 from meshcore import MeshCore, EventType, logger
 
 # Version
-VERSION = "v1.6.9"
+VERSION = "v1.6.10"
 
 # default ble address is stored in a config file
 MCCLI_CONFIG_DIR = os.path.expanduser("~/.config/meshcore/")
@@ -769,6 +769,8 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
         "at": None,
         "scope": None,
         "send_raw": None,
+        "gps" : {"on":None,"off":None,"sync":None,"once":None,"diag":None,"fix":None,"fix_stats":None,"period":None,
+        },
         "set" : {
             "name" : None,
             "pin" : None,
@@ -829,6 +831,8 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
             "ui.backlight_on_msgs": None,
             "ui.auto_off_blank": None,
             "ui.max_partial": None,
+            "ui.nd_name": None,
+            "ui.gps_action": {"toggle":None, "once":None,},
         },
         "get" : {"name":None,
             "bat":None,
@@ -974,7 +978,8 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
         "req_clock" :None,
         "setperm":contact_list,
         "region" : {"get":None, "allowf": None, "denyf": None, "put": None, "remove": None, "save": None, "home": None},
-        "gps" : {"on":None,"off":None,"sync":None,"setloc":None,
+        "gps" : {"on":None,"off":None,"sync":None,"once":None,"diag":None,"fix":None,"fix_stats":None,"period":None,
+            "setloc":None,
             "advert" : {"none": None, "share": None, "prefs": None},
         },
         "powersaving" : {"on":None,"off":None},
@@ -990,6 +995,7 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
             "flood.advert.interval" : None,
             "flood.max":None,
             "advert.interval" : None,
+            "advert.loc" : None,
             "guest.password" : None,
             "owner.info":None,
             "rxdelay": None,
@@ -1019,6 +1025,7 @@ def make_completion_dict(contacts, pending=None, to=None, channels=None):
             "flood.advert.interval" : None,
             "flood.max" : None,
             "advert.interval" : None,
+            "advert.loc" : {"none": None, "shared": None, "prefs": None},
             "guest.password" : None,
             "owner.info":None,
             "allow.read.only" : {"on": None, "off": None},
@@ -5514,8 +5521,8 @@ async def main(argv):
     first_device = False
     quiet = False
     force_interactive = False
-    serial_dtr = True
-    serial_rts = False
+    serial_dtr = None
+    serial_rts = None
 
     # basic logger configuration (was removed from meshcore_py)
     logging.basicConfig(level=logging.INFO)
